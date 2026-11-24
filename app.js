@@ -1,351 +1,155 @@
-/* Presença IFBA — integração Supabase v2 */
+/* Presença IFBA — versão reconstruída com Supabase */
 const SUPABASE_URL = 'https://kvcqgceqgmagqlcazrxa.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_pQ65ZzJSgmqHElLumvPFTQ_BblhviDt';
-
-const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_KEY = 'sb_publishable_pQ65ZzJSgmqHElLumvPFTQ_BblhviDt';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const app = document.getElementById('app');
-const toastEl = document.getElementById('toast');
-let currentEvent = null;
-let currentRows = [];
-let toastTimer;
+const toast = document.getElementById('toast');
 
 const CATALOG = {
-  'Técnico Integrado': ['Eletromecânica', 'Eletrônica', 'Informática', 'Meio Ambiente'],
-  'Técnico Subsequente': ['Eletromecânica', 'Eletrônica', 'Informática', 'Segurança do Trabalho'],
-  'Graduação': ['Engenharia Ambiental', 'Engenharia Civil', 'Engenharia Elétrica', 'Engenharia Mecânica', 'Licenciatura em Química', 'Sistemas de Informação'],
-  'Pós-Graduação': ['Especialização Lato Sensu em Desenvolvimento Web']
+  'Técnico Integrado':['Eletromecânica','Eletrônica','Informática','Meio Ambiente'],
+  'Técnico Subsequente':['Eletromecânica','Eletrônica','Informática','Segurança do Trabalho'],
+  'Graduação':['Engenharia Ambiental','Engenharia Civil','Engenharia Elétrica','Engenharia Mecânica','Licenciatura em Química','Sistemas de Informação'],
+  'Pós-Graduação':['Especialização Lato Sensu em Desenvolvimento Web']
 };
+const SYSTEM_FIELDS = [
+  {key:'nome',label:'Nome completo',type:'text',required:true},
+  {key:'matricula',label:'Número de matrícula',type:'text',required:true},
+  {key:'modalidade',label:'Modalidade',type:'modality',required:true},
+  {key:'curso',label:'Curso',type:'course',required:true},
+  {key:'periodo',label:'Série / semestre / ano',type:'period',required:true}
+];
+let currentEvent=null, currentResponses=[], draftQuestions=[], draftFields=[], selectedBanner=null;
 
-function esc(value='') {
-  return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function notify(message) {
-  toastEl.textContent = message;
-  toastEl.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 4200);
-}
-function setLoading(message='Carregando…') {
-  app.innerHTML = `<section class="panel loading"><span class="spinner"></span><p>${esc(message)}</p></section>`;
-}
-function formatDate(value) {
-  if (!value) return 'Não definido';
-  return new Date(value).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'});
-}
-function eventState(event) {
-  const now = Date.now();
-  if (!event.is_active) return {label:'Desativado', cls:'closed', open:false};
-  if (event.start_at && new Date(event.start_at).getTime() > now) return {label:'Agendado', cls:'scheduled', open:false};
-  if (event.end_at && new Date(event.end_at).getTime() < now) return {label:'Encerrado', cls:'closed', open:false};
-  return {label:'Aberto', cls:'', open:true};
-}
-function toLocalInput(value) {
-  if (!value) return '';
-  const d = new Date(value);
-  const local = new Date(d.getTime() - d.getTimezoneOffset()*60000);
-  return local.toISOString().slice(0,16);
-}
-function localToIso(value) { return value ? new Date(value).toISOString() : null; }
-function eventUrl(id) { return `${location.href.split('#')[0]}#evento=${encodeURIComponent(id)}`; }
-function readRoute() {
-  const hash = location.hash || '';
-  const match = hash.match(/^#evento=([0-9a-f-]{36})$/i);
-  return match ? {type:'event', id:match[1]} : {type:'admin'};
-}
-async function route() {
-  const r = readRoute();
-  if (r.type === 'event') return renderPublicEvent(r.id);
-  const {data:{session}} = await db.auth.getSession();
-  if (session) return renderDashboard();
-  return renderLogin();
-}
-window.addEventListener('hashchange', route);
-db.auth.onAuthStateChange((_event, session) => {
-  if (readRoute().type === 'admin') session ? renderDashboard() : renderLogin();
-});
+function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function say(m){toast.textContent=m;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),4000);}
+function loading(m='Carregando…'){app.innerHTML=`<section class="panel loading">${esc(m)}</section>`;}
+function fmt(v){return v?new Date(v).toLocaleString('pt-BR'):'Não definido';}
+function localValue(v){if(!v)return '';const d=new Date(v);return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,16);}
+function iso(v){return v?new Date(v).toISOString():null;}
+function urlFor(id){return `${location.href.split('#')[0]}#f-${id}`;}
+function route(){const m=(location.hash||'').match(/^#f-([0-9a-f-]{36})$/i);if(m)return publicForm(m[1]);return dashboardOrLogin();}
+window.addEventListener('hashchange',route);
+async function dashboardOrLogin(){const {data:{session}}=await db.auth.getSession();session?dashboard():login();}
+db.auth.onAuthStateChange((_e,s)=>{if(!location.hash.startsWith('#f-'))s?dashboard():login();});
 
-function renderLogin(message='') {
-  app.innerHTML = `
-    <section class="panel narrow">
-      <p class="eyebrow">Acesso restrito</p>
-      <h1>Área administrativa</h1>
-      <p class="muted">Entre com seu e-mail e senha cadastrados no Supabase Auth.</p>
-      ${message ? `<div class="alert error">${esc(message)}</div>` : ''}
-      <form id="login-form">
-        <label for="email">E-mail institucional ou cadastrado <span class="required">*</span></label>
-        <input id="email" type="email" autocomplete="username" required placeholder="seuemail@exemplo.com">
-        <label for="password">Senha <span class="required">*</span></label>
-        <input id="password" type="password" autocomplete="current-password" required placeholder="Sua senha">
-        <div class="actions" style="margin-top:18px"><button class="btn block" type="submit">Entrar no painel</button></div>
-      </form>
-      <div class="divider"></div>
-      <p class="hint">Estudantes: acessem o formulário pelo link ou QR Code disponibilizado pela organização do evento.</p>
-    </section>`;
-  document.getElementById('login-form').addEventListener('submit', login);
+function login(message=''){
+ app.innerHTML=`<section class="panel narrow"><p class="eyebrow">Acesso restrito</p><h1>Área administrativa</h1><p class="muted">Entre com o e-mail e a senha cadastrados no sistema.</p>${message?`<div class="alert error">${esc(message)}</div>`:''}<form id="login-form"><label>E-mail</label><input id="email" type="email" autocomplete="username" required><label>Senha</label><input id="password" type="password" autocomplete="current-password" required><div class="actions"><button class="block" type="submit">Entrar</button></div></form><p class="hint">Estudantes: utilizem o link ou QR Code enviado pela organização.</p></section>`;
+ document.getElementById('login-form').addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;b.textContent='Entrando…';const {error}=await db.auth.signInWithPassword({email:document.getElementById('email').value.trim(),password:document.getElementById('password').value});if(error)login('E-mail ou senha inválidos, ou usuário sem acesso administrativo.');else dashboard();});
 }
-async function login(e) {
-  e.preventDefault();
-  const button = e.currentTarget.querySelector('button');
-  button.disabled = true; button.textContent = 'Entrando…';
-  const email = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
-  const {error} = await db.auth.signInWithPassword({email, password});
-  if (error) renderLogin('Não foi possível entrar. Confira o e-mail e a senha.');
-  else renderDashboard();
+async function logout(){await db.auth.signOut();location.hash='';login();}
+async function dashboard(){
+ loading('Carregando formulários…');
+ const {data:events,error}=await db.from('events').select('*').order('created_at',{ascending:false});
+ if(error){app.innerHTML=`<section class="panel"><div class="alert error">${esc(error.message)}</div><button onclick="logout()">Sair</button></section>`;return;}
+ app.innerHTML=`<section class="panel"><div class="actions" style="justify-content:space-between"><div><p class="eyebrow">Administração</p><h1>Painel do Presença IFBA</h1><p class="muted">Crie formulários, compartilhe QR Codes e consulte as respostas.</p></div><button class="secondary" onclick="logout()">Sair</button></div><div class="actions"><button onclick="newForm()">＋ Criar formulário</button></div><div class="divider"></div><h2>Formulários criados</h2>${events.length?events.map(ev=>{const st=state(ev);return `<article class="event-item"><div><span class="status ${st.cls}">${st.label}</span><h3>${esc(ev.title)}</h3><div class="event-meta">Criado em ${fmt(ev.created_at)} · Abertura: ${fmt(ev.start_at)} · Encerramento: ${fmt(ev.end_at)}</div></div><div class="actions"><button class="small" onclick="manage('${ev.id}')">Visualizar</button><button class="small secondary" onclick="editForm('${ev.id}')">Editar</button></div></article>`}).join(''):'<div class="empty">Nenhum formulário cadastrado.</div>'}</section>`;
 }
-async function logout() {
-  const {error} = await db.auth.signOut();
-  if (error) notify('Não foi possível encerrar a sessão.');
-  location.hash = 'inicio';
-  renderLogin();
+function state(e){const n=Date.now();if(!e.is_active)return{label:'Desativado',cls:'closed'};if(e.start_at&&n<new Date(e.start_at))return{label:'Agendado',cls:'scheduled'};if(e.end_at&&n>new Date(e.end_at))return{label:'Encerrado',cls:'closed'};return{label:'Aberto',cls:''};}
+function defaultFields(){return ['nome','matricula','modalidade','curso','periodo'];}
+function newForm(){currentEvent=null;selectedBanner=null;draftFields=defaultFields();draftQuestions=[];editor();}
+async function editForm(id){loading('Abrindo formulário…');const {data,error}=await db.from('events').select('*').eq('id',id).single();if(error)return say(error.message);currentEvent=data;selectedBanner=null;const c=data.form_config||{};draftFields=c.fields||defaultFields();draftQuestions=c.questions||[];editor(data);}
+function editor(ev=null){
+ const cfg=ev?.form_config||{};
+ app.innerHTML=`<section class="panel"><p class="eyebrow">${ev?'Edição':'Novo formulário'}</p><h1>${ev?'Editar formulário':'Cadastrar formulário'}</h1>
+ <form id="builder">
+ <label>Nome do formulário *</label><input id="title" required maxlength="180" value="${esc(ev?.title||'')}">
+ <label>Descrição / orientações</label><textarea id="description">${esc(ev?.description||'')}</textarea>
+ <h3>Imagem no topo do formulário</h3><p class="hint">Escolha uma foto ou banner do computador ou celular. A imagem será armazenada no Supabase.</p><input id="banner" type="file" accept="image/*">${ev?.image_url?`<img class="banner" id="banner-preview" src="${esc(ev.image_url)}">`:'<img class="banner hidden" id="banner-preview">'}
+ <h3>Campos de identificação</h3><p class="hint">Marque os dados que o estudante deverá preencher.</p>
+ <div id="fields">${SYSTEM_FIELDS.map(f=>`<label class="inline-check"><input type="checkbox" data-field="${f.key}" ${draftFields.includes(f.key)?'checked':''}>${f.label}</label>`).join('')}</div>
+ <h3>Perguntas adicionais</h3><div id="questions">${questionEditorHtml()}</div><button type="button" class="secondary" onclick="addQuestion()">＋ Adicionar pergunta</button>
+ <h3>Código da aula</h3><label class="inline-check"><input id="use-code" type="checkbox" ${ev?.access_code?'checked':''} onchange="document.getElementById('code-wrap').classList.toggle('hidden',!this.checked)"> Exigir código para registrar presença</label><div id="code-wrap" class="${ev?.access_code?'':'hidden'}"><input id="access-code" placeholder="Ex.: IFBA2026" value="${esc(ev?.access_code||'')}"></div>
+ <h3>Horário de funcionamento</h3><div class="grid2"><div><label>Abertura</label><input id="start" type="datetime-local" value="${localValue(ev?.start_at)}"></div><div><label>Encerramento</label><input id="end" type="datetime-local" value="${localValue(ev?.end_at)}"></div></div>
+ <label class="inline-check"><input id="active" type="checkbox" ${ev?.is_active!==false?'checked':''}> Formulário ativo</label>
+ <div class="actions"><button type="submit">${ev?'Salvar alterações':'Publicar formulário'}</button><button type="button" class="secondary" onclick="${ev?`manage('${ev.id}')`:'dashboard()'}">Cancelar</button></div></form></section>`;
+ document.getElementById('banner').addEventListener('change',previewBanner);
+ document.getElementById('builder').addEventListener('submit',saveForm);
 }
+function questionEditorHtml(){return draftQuestions.map((q,i)=>`<div class="question"><div class="question-row"><input placeholder="Digite a pergunta" value="${esc(q.label)}" oninput="draftQuestions[${i}].label=this.value"><select onchange="draftQuestions[${i}].type=this.value;editor(currentEvent)"><option value="text" ${q.type==='text'?'selected':''}>Resposta livre</option><option value="choice" ${q.type==='choice'?'selected':''}>Múltipla escolha</option></select><button type="button" class="danger small" onclick="draftQuestions.splice(${i},1);editor(currentEvent)">Remover</button></div><label class="inline-check"><input type="checkbox" ${q.required?'checked':''} onchange="draftQuestions[${i}].required=this.checked"> Resposta obrigatória</label>${q.type==='choice'?`<label>Opções (uma por linha)</label><textarea oninput="draftQuestions[${i}].options=this.value">${esc((q.options||[]).join('\n'))}</textarea>`:''}</div>`).join('')||'<p class="hint">Nenhuma pergunta adicional.</p>';}
+function addQuestion(){draftQuestions.push({label:'',type:'text',required:false,options:[]});editor(currentEvent);}
+function previewBanner(e){const f=e.target.files[0],img=document.getElementById('banner-preview');if(!f)return;if(!f.type.startsWith('image/'))return say('Escolha um arquivo de imagem.');img.src=URL.createObjectURL(f);img.classList.remove('hidden');}
+async function saveForm(e){
+ e.preventDefault();
+ const title=document.getElementById('title').value.trim();if(!title)return;
+ const start=document.getElementById('start').value,end=document.getElementById('end').value;if(start&&end&&new Date(start)>=new Date(end))return say('O encerramento precisa ser posterior à abertura.');
+ const fields=[...document.querySelectorAll('[data-field]:checked')].map(x=>x.dataset.field);
+ if(!fields.length&&!draftQuestions.length)return say('Selecione ao menos um campo ou crie uma pergunta.');
+ const questions=draftQuestions.map(q=>({...q,label:(q.label||'').trim(),options:q.type==='choice'?String(q.options||'').split('\n').map(x=>x.trim()).filter(Boolean):[]})).filter(q=>q.label);
+ if(questions.some(q=>q.type==='choice'&&q.options.length<2))return say('Cada pergunta de múltipla escolha precisa de pelo menos duas opções.');
+ const useCode=document.getElementById('use-code').checked,code=useCode?document.getElementById('access-code').value.trim().toUpperCase():null;
+ if(useCode&&!code)return say('Digite o código da aula.');
+ const payload={title,description:document.getElementById('description').value.trim()||null,start_at:iso(start),end_at:iso(end),is_active:document.getElementById('active').checked,form_config:{fields,questions,requires_code:useCode},access_code:code};
+ const b=e.submitter;b.disabled=true;b.textContent='Salvando…';
+ let result=currentEvent?await db.from('events').update(payload).eq('id',currentEvent.id).select().single():await db.from('events').insert(payload).select().single();
+ if(result.error){b.disabled=false;b.textContent='Tentar novamente';return say('Erro ao salvar: '+result.error.message);}
+ let ev=result.data;
+ const file=document.getElementById('banner').files[0];
+ if(file){const ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');const path=`${ev.id}/${Date.now()}.${ext}`;const up=await db.storage.from('event-banners').upload(path,file,{upsert:true,contentType:file.type});if(up.error){say('Formulário salvo, mas a imagem não foi enviada: '+up.error.message);}else{const {data}=db.storage.from('event-banners').getPublicUrl(path);const upd=await db.from('events').update({image_url:data.publicUrl}).eq('id',ev.id).select().single();if(!upd.error)ev=upd.data;}}
+ say('Formulário salvo.');manage(ev.id);
+}
+async function manage(id){
+ loading('Carregando formulário…');
+ const [{data:ev,error},{count}]=await Promise.all([db.from('events').select('*').eq('id',id).single(),db.from('form_responses').select('*',{count:'exact',head:true}).eq('event_id',id)]);
+ if(error){app.innerHTML=`<section class="panel"><div class="alert error">${esc(error.message)}</div><button onclick="dashboard()">Voltar</button></section>`;return;}
+ const u=urlFor(id),st=state(ev);
+ app.innerHTML=`<section class="panel"><div class="actions" style="justify-content:space-between"><div><p class="eyebrow">Formulário publicado</p><h1>${esc(ev.title)}</h1><span class="status ${st.cls}">${st.label}</span></div><button class="secondary" onclick="dashboard()">← Painel</button></div>${ev.image_url?`<img class="banner" src="${esc(ev.image_url)}">`:''}<p class="muted">${esc(ev.description||'Sem descrição.')}</p><div class="statrow"><div class="stat"><strong>${count||0}</strong><span>Respostas recebidas</span></div><div class="stat"><strong>${ev.is_active?'Sim':'Não'}</strong><span>Formulário ativo</span></div></div><div class="divider"></div><div class="qr-layout"><div id="qr" class="qr-box"></div><div style="flex:1;min-width:220px"><h3>Link e QR Code</h3><p class="hint">Compartilhe este link com os estudantes.</p><div class="link-row"><input id="public-link" readonly value="${esc(u)}"><button class="secondary" onclick="copyLink()">Copiar</button></div><div class="actions"><button class="secondary" onclick="downloadQr()">Baixar QR Code</button></div></div></div><div class="divider"></div><div class="actions"><button onclick="responses('${id}')">Consultar respostas</button><button class="secondary" onclick="editForm('${id}')">Editar formulário</button><button class="secondary" onclick="toggleActive('${id}',${!ev.is_active})">${ev.is_active?'Desativar':'Ativar'}</button><button class="danger" onclick="removeForm('${id}')">Excluir</button></div></section>`;
+ new QRCode(document.getElementById('qr'),{text:u,width:190,height:190});
+}
+function copyLink(){const x=document.getElementById('public-link');x.select();navigator.clipboard?.writeText(x.value).then(()=>say('Link copiado!')).catch(()=>{document.execCommand('copy');say('Link copiado!')});}
+function downloadQr(){const c=document.querySelector('#qr canvas');if(!c)return;const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='qrcode-presenca-ifba.png';a.click();}
+async function toggleActive(id,active){const {error}=await db.from('events').update({is_active:active}).eq('id',id);if(error)say(error.message);else manage(id);}
+async function removeForm(id){if(!confirm('Excluir este formulário e todas as respostas? Esta ação não pode ser desfeita.'))return;const {error}=await db.from('events').delete().eq('id',id);if(error)say('Não foi possível excluir: '+error.message);else{say('Formulário excluído.');dashboard();}}
+async function responses(id){
+ loading('Consultando respostas…');
+ const [{data:ev,error:e1},{data:rows,error:e2}]=await Promise.all([db.from('events').select('id,title').eq('id',id).single(),db.from('form_responses').select('*').eq('event_id',id).order('created_at',{ascending:false})]);
+ if(e1||e2){app.innerHTML=`<section class="panel"><div class="alert error">${esc((e1||e2).message)}</div><button onclick="manage('${id}')">Voltar</button></section>`;return;}
+ currentResponses=rows||[];
+ const keys=[...new Set(currentResponses.flatMap(r=>Object.keys(r.answers||{})))];
+ app.innerHTML=`<section class="panel"><p class="eyebrow">Relatório</p><h1>${esc(ev.title)}</h1><p class="muted">${rows.length} resposta(s).</p><div class="actions"><button onclick="exportResponses('${id}')">Exportar CSV</button><button class="secondary" onclick="manage('${id}')">Voltar ao formulário</button></div><div class="table-wrap">${rows.length?`<table><thead><tr><th>Data e hora</th>${keys.map(k=>`<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr><td>${fmt(r.created_at)}</td>${keys.map(k=>`<td>${esc(r.answers?.[k]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`:'<div class="empty">Ainda não há respostas.</div>'}</div></section>`;
+}
+function exportResponses(id){const keys=[...new Set(currentResponses.flatMap(r=>Object.keys(r.answers||{})))];const q=x=>'"'+String(x??'').replace(/"/g,'""')+'"';const lines=[['Data e hora',...keys].map(q).join(';'),...currentResponses.map(r=>[new Date(r.created_at).toLocaleString('pt-BR'),...keys.map(k=>r.answers?.[k]??'')].map(q).join(';'))];const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`respostas-${id}.csv`;a.click();URL.revokeObjectURL(a.href);}
 
-async function renderDashboard() {
-  setLoading('Carregando seus eventos…');
-  const {data:{session}} = await db.auth.getSession();
-  if (!session) return renderLogin();
-  const {data:events, error} = await db.from('events').select('*').order('created_at', {ascending:false});
-  if (error) {
-    app.innerHTML = `<section class="panel"><div class="alert error">Erro ao carregar eventos: ${esc(error.message)}</div><button class="btn secondary" onclick="logout()">Sair</button></section>`;
-    return;
-  }
-  const list = (events || []).map(event => {
-    const st = eventState(event);
-    return `<article class="event-item">
-      <div><span class="status ${st.cls}">${st.label}</span><h3>${esc(event.title)}</h3>
-      <div class="event-meta">Criado em ${formatDate(event.created_at)} · Início: ${formatDate(event.start_at)} · Fim: ${formatDate(event.end_at)}</div>
-      ${event.description ? `<p class="muted">${esc(event.description)}</p>` : ''}</div>
-      <div class="actions">
-        <button class="btn small" onclick="showEvent('${event.id}')">Gerenciar</button>
-        <button class="btn secondary small" onclick="toggleEvent('${event.id}', ${!event.is_active})">${event.is_active ? 'Desativar' : 'Ativar'}</button>
-      </div>
-    </article>`;
-  }).join('');
-  app.innerHTML = `
-    <section class="panel">
-      <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">Administração</p><h1>Painel de eventos</h1><p class="muted">Gerencie os eventos e acompanhe os registros de presença.</p></div><button class="btn secondary" onclick="logout()">Sair</button></div>
-      <div class="actions" style="margin:18px 0 8px"><button class="btn" onclick="eventEditor()">＋ Criar evento</button></div>
-      <div class="divider"></div>
-      <h2>Eventos cadastrados</h2>
-      <div class="event-list">${list || '<div class="empty">Nenhum evento cadastrado. Clique em “Criar evento” para começar.</div>'}</div>
-    </section>`;
+function periodsFor(modality){if(modality==='Técnico Integrado')return['1º ano','2º ano','3º ano','4º ano'];if(modality==='Técnico Subsequente')return['1º semestre','2º semestre','3º semestre','4º semestre'];if(modality==='Graduação')return Array.from({length:10},(_,i)=>`${i+1}º semestre`);return['Especialização'];}
+async function publicForm(id){
+ loading('Abrindo formulário…');
+ const {data:ev,error}=await db.from('events').select('id,title,description,image_url,is_active,start_at,end_at,form_config').eq('id',id).maybeSingle();
+ if(error||!ev){app.innerHTML='<section class="panel narrow"><h1>Formulário não encontrado</h1><p>Confira o link ou fale com a organização.</p></section>';return;}
+ const now=Date.now();if(!ev.is_active)return closed(ev,'Este formulário está desativado.');if(ev.start_at&&now<new Date(ev.start_at))return closed(ev,'As respostas ainda não estão abertas. Abertura: '+fmt(ev.start_at));if(ev.end_at&&now>new Date(ev.end_at))return closed(ev,'O período de respostas foi encerrado.');
+ const cfg=ev.form_config||{},fields=cfg.fields||defaultFields(),questions=cfg.questions||[];
+ const html=fields.map(key=>renderSystemField(key)).join('')+questions.map((q,i)=>renderQuestion(q,i)).join('');
+ app.innerHTML=`<section class="panel narrow">${ev.image_url?`<img class="banner" src="${esc(ev.image_url)}">`:''}<p class="eyebrow">Registro de presença · IFBA</p><h1>${esc(ev.title)}</h1>${ev.description?`<p class="muted">${esc(ev.description)}</p>`:''}<div class="alert success">Formulário disponível para preenchimento.</div><form id="public-form">${html}${ev.form_config?.requires_code?'<label>Código da aula *</label><input id="code" autocomplete="off" required>':''}<div class="actions"><button class="block" type="submit">Enviar resposta</button></div><p class="hint">Confira seus dados antes de enviar. A resposta será vinculada a este formulário.</p></form></section>`;
+ document.getElementById('modality')?.addEventListener('change',updateCourses);
+ document.getElementById('course')?.addEventListener('change',updatePeriods);
+ document.getElementById('period')?.addEventListener('change',updateClass);
+ document.getElementById('public-form').addEventListener('submit',e=>submitPublic(e,ev));
 }
-
-function eventEditor(event=null) {
-  currentEvent = event;
-  app.innerHTML = `
-    <section class="panel">
-      <p class="eyebrow">${event ? 'Editar evento' : 'Novo evento'}</p>
-      <h1>${event ? 'Atualizar informações' : 'Criar evento'}</h1>
-      <form id="event-form">
-        <label for="event-title">Nome do evento <span class="required">*</span></label>
-        <input id="event-title" required maxlength="180" value="${esc(event?.title || '')}" placeholder="Ex.: Semana de Ciência e Tecnologia">
-        <label for="event-description">Descrição</label>
-        <textarea id="event-description" maxlength="2000" placeholder="Informações para os participantes">${esc(event?.description || '')}</textarea>
-        <div class="field-grid">
-          <div><label for="event-start">Abertura das presenças</label><input id="event-start" type="datetime-local" value="${toLocalInput(event?.start_at)}"><p class="hint">Deixe vazio para não definir horário inicial.</p></div>
-          <div><label for="event-end">Encerramento das presenças</label><input id="event-end" type="datetime-local" value="${toLocalInput(event?.end_at)}"><p class="hint">Deixe vazio para não definir horário final.</p></div>
-        </div>
-        <label class="inline-check" style="margin-top:18px"><input id="event-active" type="checkbox" ${event?.is_active !== false ? 'checked' : ''}> Evento ativo</label>
-        <div class="actions" style="margin-top:22px"><button class="btn" type="submit">${event ? 'Salvar alterações' : 'Criar evento'}</button><button class="btn secondary" type="button" onclick="renderDashboard()">Cancelar</button></div>
-      </form>
-    </section>`;
-  document.getElementById('event-form').addEventListener('submit', saveEvent);
+function renderSystemField(key){
+ const f=SYSTEM_FIELDS.find(x=>x.key===key);if(!f)return '';
+ if(key==='modalidade')return `<label>Modalidade *</label><select id="modality" required><option value="">Selecione</option>${Object.keys(CATALOG).map(x=>`<option>${esc(x)}</option>`).join('')}</select>`;
+ if(key==='curso')return '<label>Curso *</label><select id="course" required disabled><option>Selecione a modalidade primeiro</option></select>';
+ if(key==='periodo')return '<label>Série / semestre / ano *</label><select id="period" required disabled><option>Selecione o curso primeiro</option></select><div id="class-wrap" class="hidden"><label>Turma *</label><select id="class-name"><option value="">Selecione</option><option>Turma A</option><option>Turma B</option></select></div>';
+ return `<label>${f.label} *</label><input id="${key}" required maxlength="180">`;
 }
-async function saveEvent(e) {
-  e.preventDefault();
-  const start = document.getElementById('event-start').value;
-  const end = document.getElementById('event-end').value;
-  if (start && end && new Date(start) >= new Date(end)) return notify('O encerramento deve ser posterior à abertura.');
-  const payload = {
-    title: document.getElementById('event-title').value.trim(),
-    description: document.getElementById('event-description').value.trim() || null,
-    start_at: localToIso(start), end_at: localToIso(end),
-    is_active: document.getElementById('event-active').checked
-  };
-  const button = e.currentTarget.querySelector('button[type="submit"]'); button.disabled = true; button.textContent = 'Salvando…';
-  let result;
-  if (currentEvent?.id) result = await db.from('events').update(payload).eq('id', currentEvent.id).select().single();
-  else result = await db.from('events').insert(payload).select().single();
-  if (result.error) { notify(`Erro ao salvar: ${result.error.message}`); button.disabled=false; button.textContent='Tentar novamente'; return; }
-  notify('Evento salvo com sucesso.');
-  showEvent(result.data.id);
+function renderQuestion(q,i){if(q.type==='choice')return `<div class="question"><label>${esc(q.label)}${q.required?' *':''}</label>${(q.options||[]).map((o,j)=>`<label class="option"><input type="radio" name="q-${i}" value="${esc(o)}" ${q.required?'required':''}>${esc(o)}</label>`).join('')}</div>`;return `<label>${esc(q.label)}${q.required?' *':''}</label><input id="q-${i}" ${q.required?'required':''}>`;}
+function closed(ev,msg){app.innerHTML=`<section class="panel narrow"><p class="eyebrow">Presença IFBA</p><h1>${esc(ev.title)}</h1><div class="alert">${esc(msg)}</div><p class="muted">Se precisar, procure a organização do evento.</p></section>`;}
+function updateCourses(){const m=document.getElementById('modality').value,c=document.getElementById('course');c.innerHTML='<option value="">Selecione o curso</option>'+(CATALOG[m]||[]).map(x=>`<option>${esc(x)}</option>`).join('');c.disabled=!m;const p=document.getElementById('period');p.innerHTML='<option value="">Selecione o curso primeiro</option>';p.disabled=true;updateClass();}
+function updatePeriods(){const m=document.getElementById('modality').value,c=document.getElementById('course').value,p=document.getElementById('period');p.innerHTML='<option value="">Selecione</option>'+(c?periodsFor(m):[]).map(x=>`<option>${x}</option>`).join('');p.disabled=!c;updateClass();}
+function updateClass(){const m=document.getElementById('modality')?.value,c=document.getElementById('course')?.value,p=document.getElementById('period')?.value;const show=m==='Técnico Integrado'&&c==='Eletrônica'&&['1º ano','2º ano','3º ano','4º ano'].includes(p);const w=document.getElementById('class-wrap');if(w){w.classList.toggle('hidden',!show);document.getElementById('class-name').required=show;if(!show)document.getElementById('class-name').value='';}}
+async function submitPublic(e,ev){
+ e.preventDefault();const now=Date.now();if(!ev.is_active||(ev.start_at&&now<new Date(ev.start_at))||(ev.end_at&&now>new Date(ev.end_at)))return closed(ev,'O período de respostas não está aberto.');
+ const submittedCode=ev.form_config?.requires_code?document.getElementById('code').value.trim().toUpperCase():null;
+ const cfg=ev.form_config||{},fields=cfg.fields||defaultFields(),answers={};
+ if(fields.includes('nome'))answers['Nome completo']=document.getElementById('nome').value.trim();
+ if(fields.includes('matricula'))answers['Número de matrícula']=document.getElementById('matricula').value.trim();
+ if(fields.includes('modalidade'))answers['Modalidade']=document.getElementById('modality').value;
+ if(fields.includes('curso'))answers['Curso']=document.getElementById('course').value;
+ if(fields.includes('periodo'))answers['Série / semestre / ano']=document.getElementById('period').value;
+ if(fields.includes('periodo')&&document.getElementById('class-name')&&!document.getElementById('class-wrap').classList.contains('hidden'))answers['Turma']=document.getElementById('class-name').value;
+ (cfg.questions||[]).forEach((q,i)=>{answers[q.label]=q.type==='choice'?(document.querySelector(`[name="q-${i}"]:checked`)?.value||''):document.getElementById(`q-${i}`).value.trim();});
+ if(Object.values(answers).some(v=>!String(v).trim()&&v!==''))return say('Confira os campos.');
+ const b=e.submitter;b.disabled=true;b.textContent='Enviando…';
+ const enrollment=answers['Número de matrícula']||null;
+ const {error}=await db.rpc('submit_form_response',{p_event_id:ev.id,p_code:submittedCode,p_enrollment:enrollment,p_answers:answers});
+ if(error){b.disabled=false;b.textContent='Tentar novamente';if(error.code==='23505')return say('Esta matrícula já registrou presença neste formulário.');if((error.message||'').toLowerCase().includes('código'))return say('Código da aula incorreto.');return say('Não foi possível enviar: '+error.message);}
+ app.innerHTML=`<section class="panel narrow"><div class="alert success"><strong>Resposta registrada com sucesso!</strong></div><h1>Obrigado${answers['Nome completo']?', '+esc(answers['Nome completo']):''}!</h1><p class="muted">Seu registro foi recebido pelo Presença IFBA.</p></section>`;
 }
-async function toggleEvent(id, active) {
-  const {error} = await db.from('events').update({is_active:active}).eq('id',id);
-  if (error) notify(`Não foi possível alterar: ${error.message}`); else {notify(active?'Evento ativado.':'Evento desativado.');renderDashboard();}
-}
-async function showEvent(id) {
-  setLoading('Carregando informações do evento…');
-  const [{data:event,error:eventError},{count,error:countError}] = await Promise.all([
-    db.from('events').select('*').eq('id',id).single(),
-    db.from('attendances').select('*',{count:'exact',head:true}).eq('event_id',id)
-  ]);
-  if (eventError) {app.innerHTML=`<section class="panel"><div class="alert error">${esc(eventError.message)}</div><button class="btn secondary" onclick="renderDashboard()">Voltar</button></section>`;return;}
-  const st=eventState(event), url=eventUrl(id);
-  app.innerHTML=`
-    <section class="panel">
-      <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">Gerenciamento do evento</p><h1>${esc(event.title)}</h1><span class="status ${st.cls}">${st.label}</span></div><button class="btn secondary" onclick="renderDashboard()">← Painel</button></div>
-      <p class="muted">${esc(event.description || 'Sem descrição.')}</p>
-      <div class="stats"><div class="stat"><strong>${countError?'—':(count||0)}</strong><span>Presenças registradas</span></div><div class="stat"><strong>${event.is_active?'Sim':'Não'}</strong><span>Evento ativo</span></div><div class="stat"><strong>${st.open?'Aberto':st.label}</strong><span>Situação das inscrições</span></div></div>
-      <div class="qr-layout"><div id="event-qr" class="qr-box"></div><div style="flex:1;min-width:220px"><h3>Link e QR Code do evento</h3><p class="hint">Compartilhe este endereço com os estudantes. O QR Code abre diretamente o formulário deste evento.</p><div class="link-copy"><input id="event-link" readonly value="${esc(url)}"><button class="btn secondary" onclick="copyEventLink()">Copiar</button></div><button class="btn secondary small" style="margin-top:10px" onclick="downloadQr()">Baixar QR Code</button></div></div>
-      <div class="divider"></div>
-      <div class="actions"><button class="btn" onclick="loadResults('${id}')">Consultar presenças</button><button class="btn secondary" onclick="eventEditor(${JSON.stringify(event).replace(/"/g,'&quot;')})">Editar evento</button><button class="btn danger" onclick="confirmDeleteEvent('${id}')">Excluir evento</button></div>
-    </section>`;
-  const qrTarget=document.getElementById('event-qr');
-  if (window.QRCode) new QRCode(qrTarget,{text:url,width:190,height:190,colorDark:'#173b25',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-  else qrTarget.textContent='Biblioteca de QR Code indisponível.';
-}
-function copyEventLink() {
-  const input=document.getElementById('event-link');
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(input.value).then(()=>notify('Link copiado!')).catch(()=>{input.select();document.execCommand('copy');notify('Link copiado!');});
-  else {input.select();document.execCommand('copy');notify('Link copiado!');}
-}
-function downloadQr() {
-  const canvas=document.querySelector('#event-qr canvas');
-  const img=document.querySelector('#event-qr img');
-  const data=canvas?.toDataURL('image/png') || img?.src;
-  if (!data) return notify('QR Code ainda não está disponível.');
-  const a=document.createElement('a');a.href=data;a.download='qrcode-presenca-ifba.png';a.click();
-}
-function confirmDeleteEvent(id) {
-  if (!confirm('Excluir este evento? Todas as presenças vinculadas também serão excluídas. Esta ação não pode ser desfeita.')) return;
-  deleteEvent(id);
-}
-async function deleteEvent(id) {
-  const {error}=await db.from('events').delete().eq('id',id);
-  if (error) notify(`Não foi possível excluir: ${error.message}`);
-  else {notify('Evento excluído.');renderDashboard();}
-}
-
-async function loadResults(id) {
-  setLoading('Consultando presenças…');
-  const [{data:event,error:eventError},{data:rows,error}] = await Promise.all([
-    db.from('events').select('id,title').eq('id',id).single(),
-    db.from('attendances').select('*').eq('event_id',id).order('created_at',{ascending:false})
-  ]);
-  if (eventError || error) {
-    app.innerHTML=`<section class="panel"><div class="alert error">Não foi possível consultar os registros: ${esc((error||eventError).message)}</div><button class="btn secondary" onclick="showEvent('${id}')">Voltar</button></section>`;return;
-  }
-  currentRows=rows||[];
-  const tableRows=currentRows.map(row=>`<tr><td>${esc(formatDate(row.created_at))}</td><td>${esc(row.full_name)}</td><td>${esc(row.enrollment)}</td><td>${esc(row.modality)}</td><td>${esc(row.course)}</td><td>${esc(row.period)}</td><td>${esc(row.class_name||'—')}</td></tr>`).join('');
-  app.innerHTML=`<section class="panel"><p class="eyebrow">Relatório de presença</p><h1>${esc(event.title)}</h1><p class="muted">${currentRows.length} registro(s) encontrado(s).</p><div class="actions"><button class="btn" onclick="exportCsv('${id}')">Exportar CSV</button><button class="btn secondary" onclick="showEvent('${id}')">Voltar ao evento</button></div><div class="divider"></div>${currentRows.length?`<div class="table-wrap"><table><thead><tr><th>Data e hora</th><th>Nome completo</th><th>Matrícula</th><th>Modalidade</th><th>Curso</th><th>Ano/semestre</th><th>Turma</th></tr></thead><tbody>${tableRows}</tbody></table></div>`:'<div class="empty">Ainda não há presenças registradas neste evento.</div>'}</section>`;
-}
-function exportCsv(id) {
-  const header=['Data e hora','Nome completo','Matrícula','Modalidade','Curso','Ano/semestre','Turma'];
-  const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-  const lines=[header.map(q).join(';'),...currentRows.map(r=>[new Date(r.created_at).toLocaleString('pt-BR'),r.full_name,r.enrollment,r.modality,r.course,r.period,r.class_name||''].map(q).join(';'))];
-  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`presencas-${id}.csv`;a.click();URL.revokeObjectURL(url);
-}
-
-async function renderPublicEvent(id) {
-  setLoading('Carregando formulário de presença…');
-  const {data:event,error}=await db.from('events').select('id,title,description,is_active,start_at,end_at').eq('id',id).maybeSingle();
-  if (error || !event) {
-    app.innerHTML='<section class="panel narrow"><p class="eyebrow">Presença IFBA</p><h1>Evento indisponível</h1><div class="alert">Não foi possível localizar este evento. Confira se o link está correto ou fale com a organização.</div></section>';
-    return;
-  }
-  const state=eventState(event);
-  if (!event.is_active) return closedEvent(event,'Este evento está desativado no momento.');
-  if (event.start_at && Date.now()<new Date(event.start_at).getTime()) return closedEvent(event,`As inscrições ainda não começaram. Abertura prevista: ${formatDate(event.start_at)}.`);
-  if (event.end_at && Date.now()>new Date(event.end_at).getTime()) return closedEvent(event,'O período de registro de presença foi encerrado.');
-  app.innerHTML=`
-    <section class="panel narrow">
-      <p class="eyebrow">Registro de presença · IFBA</p>
-      <h1>${esc(event.title)}</h1>
-      ${event.description?`<p class="muted">${esc(event.description)}</p>`:''}
-      <div class="alert success">Evento aberto para registro de presença.</div>
-      <form id="attendance-form">
-        <label for="full-name">Nome completo <span class="required">*</span></label>
-        <input id="full-name" autocomplete="name" maxlength="180" required>
-        <label for="enrollment">Número de matrícula <span class="required">*</span></label>
-        <input id="enrollment" inputmode="numeric" maxlength="40" required>
-        <label for="modality">Modalidade <span class="required">*</span></label>
-        <select id="modality" required><option value="">Selecione</option>${Object.keys(CATALOG).map(x=>`<option>${esc(x)}</option>`).join('')}</select>
-        <label for="course">Curso <span class="required">*</span></label>
-        <select id="course" required disabled><option value="">Selecione primeiro a modalidade</option></select>
-        <label for="period">Ano / semestre <span class="required">*</span></label>
-        <select id="period" required disabled><option value="">Selecione primeiro o curso</option></select>
-        <div id="class-wrap" class="hidden"><label for="class-name">Turma <span class="required">*</span></label><select id="class-name"><option value="">Selecione</option><option>Turma A</option><option>Turma B</option></select></div>
-        <div class="actions" style="margin-top:22px"><button class="btn block" type="submit">Registrar presença</button></div>
-        <p class="hint">Os dados serão utilizados para controle de participação neste evento. Não envie o formulário mais de uma vez.</p>
-      </form>
-    </section>`;
-  document.getElementById('modality').addEventListener('change', updateCourses);
-  document.getElementById('course').addEventListener('change', updatePeriods);
-  document.getElementById('period').addEventListener('change', updateClassField);
-  document.getElementById('attendance-form').addEventListener('submit', e=>submitAttendance(e,event));
-}
-function closedEvent(event,message) {
-  app.innerHTML=`<section class="panel narrow"><p class="eyebrow">Presença IFBA</p><h1>${esc(event.title)}</h1><div class="alert">${esc(message)}</div><p class="muted">Se você acredita que isso é um erro, procure a organização do evento.</p></section>`;
-}
-function updateCourses() {
-  const modality=document.getElementById('modality').value;
-  const course=document.getElementById('course');
-  course.innerHTML='<option value="">Selecione o curso</option>'+(CATALOG[modality]||[]).map(c=>`<option>${esc(c)}</option>`).join('');
-  course.disabled=!modality;
-  const period=document.getElementById('period');period.innerHTML='<option value="">Selecione primeiro o curso</option>';period.disabled=true;
-  updateClassField();
-}
-function periodsFor(modality,course) {
-  if (modality==='Técnico Integrado') return ['1º ano','2º ano','3º ano','4º ano'];
-  if (modality==='Técnico Subsequente') return ['1º semestre','2º semestre','3º semestre','4º semestre'];
-  if (modality==='Graduação') return Array.from({length:10},(_,i)=>`${i+1}º semestre`);
-  return ['Especialização'];
-}
-function updatePeriods() {
-  const modality=document.getElementById('modality').value;
-  const course=document.getElementById('course').value;
-  const period=document.getElementById('period');
-  period.innerHTML='<option value="">Selecione</option>'+(course?periodsFor(modality,course):[]).map(p=>`<option>${p}</option>`).join('');
-  period.disabled=!course;
-  updateClassField();
-}
-function updateClassField() {
-  const modality=document.getElementById('modality').value;
-  const course=document.getElementById('course').value;
-  const period=document.getElementById('period').value;
-  const show=modality==='Técnico Integrado' && course==='Eletrônica' && ['1º ano','2º ano','3º ano','4º ano'].includes(period);
-  const wrap=document.getElementById('class-wrap');
-  wrap.classList.toggle('hidden',!show);
-  document.getElementById('class-name').required=show;
-  if (!show) document.getElementById('class-name').value='';
-}
-async function submitAttendance(e,event) {
-  e.preventDefault();
-  // Revalidar abertura/encerramento no momento do envio.
-  const now=Date.now();
-  if (!event.is_active || (event.start_at && now<new Date(event.start_at).getTime()) || (event.end_at && now>new Date(event.end_at).getTime())) {
-    notify('O período de presença deste evento não está aberto.'); return renderPublicEvent(event.id);
-  }
-  const button=e.currentTarget.querySelector('button[type="submit"]');button.disabled=true;button.textContent='Registrando…';
-  const modality=document.getElementById('modality').value;
-  const course=document.getElementById('course').value;
-  const period=document.getElementById('period').value;
-  const className=document.getElementById('class-name').value;
-  const payload={
-    event_id:event.id,
-    full_name:document.getElementById('full-name').value.trim(),
-    enrollment:document.getElementById('enrollment').value.trim(),
-    modality,course,period,
-    class_name:className || null
-  };
-  if (!payload.full_name || !payload.enrollment || !modality || !course || !period || (modality==='Técnico Integrado' && course==='Eletrônica' && ['1º ano','2º ano','3º ano','4º ano'].includes(period) && !className)) {
-    notify('Confira os campos obrigatórios.');button.disabled=false;button.textContent='Registrar presença';return;
-  }
-  const {error}=await db.from('attendances').insert(payload);
-  if (error) {
-    if (error.code==='23505' || /unique_attendance_per_event/i.test(error.message)) {
-      app.innerHTML=`<section class="panel narrow"><div class="alert error"><strong>Presença já registrada.</strong><br>Esta matrícula já possui um registro neste evento.</div><p class="muted">Se você acredita que houve um erro, procure a organização.</p></section>`;
-    } else {
-      notify('Não foi possível registrar a presença. Tente novamente ou procure a organização.');button.disabled=false;button.textContent='Tentar novamente';
-    }
-    return;
-  }
-  app.innerHTML=`<section class="panel narrow"><div class="alert success"><strong>Presença registrada com sucesso!</strong></div><h1>Obrigado, ${esc(payload.full_name)}.</h1><p class="muted">Seu registro para “${esc(event.title)}” foi recebido.</p></section>`;
-}
-
-// A página administrativa é a rota padrão; os links públicos usam #evento=UUID.
 route();
