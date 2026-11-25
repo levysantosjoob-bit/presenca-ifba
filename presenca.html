@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Formulário de presença | IFBA</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="public.js" defer></script>
+</head>
+<body>
+<section id="publicForm" class="student-shell"><div class="student-card">
+ <div class="student-head"><strong>IFBA · Presença</strong></div>
+ <img id="publicBanner" class="student-banner hidden" alt="Banner do evento">
+ <h2 id="publicTitle">Carregando formulário…</h2><p id="publicDescription" class="muted"></p>
+ <div id="publicClosed" class="note hidden"></div>
+ <form id="attendanceForm" class="hidden"><div id="publicFields"></div>
+  <div class="field hidden" id="codeField"><label>Código de acesso</label><input id="publicCode" autocomplete="off"></div>
+  <div id="publicGps" class="ok hidden">Este formulário exige localização. Autorize o acesso quando solicitado.</div>
+  <button class="btn" id="submitAttendance" type="submit" style="width:100%">Registrar presença</button>
+ </form><div id="publicSuccess" class="ok hidden"></div>
+</div></section><div id="toast" class="toast hidden"></div>
+</body></html>
