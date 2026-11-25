@@ -1,58 +1,60 @@
-# Presença IFBA — formulário público independente
+# Presença IFBA — versão integrada ao Supabase
 
-## Como o sistema funciona
+Esta versão corrige o compartilhamento do formulário: eventos são gravados na tabela `public.events`, e qualquer celular abre o formulário consultando o evento pelo UUID no Supabase. As respostas são gravadas em `public.form_responses` e podem ser consultadas no painel administrativo.
 
-- `index.html` é **somente a área administrativa**. Exige e-mail e senha do Supabase Auth e valida a permissão com `public.is_admin()`.
-- `presenca.html?id=UUID` é a **página pública independente**. É o endereço colocado no link e no QR Code. O estudante não precisa de conta, e-mail, senha ou código de acesso.
-- `app.js` controla o painel administrativo, criação de eventos e consulta das respostas.
-- `public.js` carrega e envia o formulário público.
-- `style.css` contém os estilos das duas páginas.
-- `supabase.sql` ajusta a leitura pública de eventos ativos e habilita Realtime em `form_responses`.
+## Arquivos
+- `index.html`: interface e carregamento das bibliotecas.
+- `style.css`: estilos.
+- `app.js`: autenticação, cadastro/consulta de eventos e respostas no Supabase.
+- `supabase.sql`: política de leitura pública de eventos ativos (migração complementar).
+- `LEIA-PRIMEIRO.txt`: passos resumidos.
 
-## Publicação no GitHub Pages
+## Supabase já configurado neste projeto
+O aplicativo aponta para o projeto Supabase `kvcqgceqgmagqlcazrxa` e usa somente a chave publicável (`sb_publishable`) no navegador. Não coloque `service_role` ou `sb_secret` no site.
 
-1. Faça uma cópia de segurança do repositório.
+O painel usa Supabase Auth e a função `public.is_admin()` para verificar a autorização administrativa. A conta precisa existir em `auth.users` e estar cadastrada em `public.admin_users`. O código não cria administradores nem altera senhas.
+
+## Publicação
+1. Faça uma cópia de segurança dos arquivos atuais do repositório GitHub.
 2. Extraia este ZIP.
-3. Envie todos os arquivos para a raiz do repositório `presenca-ifba`, substituindo os arquivos de mesmo nome: `index.html`, `presenca.html`, `app.js`, `public.js`, `style.css`, `supabase.sql`, `README.md` e `LEIA-PRIMEIRO.txt`.
-4. Faça commit na branch publicada pelo GitHub Pages e aguarde a atualização do site.
-5. O painel administrativo fica em `https://levysantosjoob-bit.github.io/presenca-ifba/`.
+3. Envie `index.html`, `style.css` e `app.js` para a raiz do repositório `presenca-ifba`, substituindo os arquivos antigos.
+4. Envie também `supabase.sql` e `README.md` para manter a documentação junto do projeto.
+5. Faça commit na branch principal (`main`).
+6. Aguarde o GitHub Pages concluir a publicação em **Actions**.
+7. Abra o site publicado em uma janela anônima e teste um evento novo.
 
-## Configuração do Supabase
+## Supabase / SQL
+No SQL Editor do projeto `kvcqgceqgmagqlcazrxa`, execute `supabase.sql`. O script apenas recria a política de leitura pública de eventos ativos; não apaga tabelas nem registros. As tabelas e políticas de administração e envio de respostas devem continuar existentes: `events`, `form_responses`, `admin_users` e `public.is_admin()`.
 
-1. Abra o SQL Editor do projeto Supabase.
-2. Execute o conteúdo de `supabase.sql`.
-3. Confirme que as políticas RLS existentes continuam ativas:
-   - leitura pública apenas de eventos ativos;
-   - inserção pública em `form_responses` para evento ativo e dentro do período permitido;
-   - leitura de `form_responses` somente por administradores.
-4. Confirme que `public.form_responses` está na publicação `supabase_realtime` (o SQL tenta adicioná-la sem duplicar).
-5. O administrador deve existir no Supabase Auth e estar autorizado em `public.admin_users`.
+A estrutura utilizada é: `events(id, title, description, start_at, end_at, access_code, form_config, is_active, image_url, created_at)` e `form_responses(event_id, enrollment, answers, created_at)`. As configurações dinâmicas do formulário (campos, perguntas, GPS e localidades) são guardadas em `events.form_config`.
 
-Não coloque chave `service_role` no navegador. O projeto usa somente a chave pública `sb_publishable`.
-
-## Fluxo de uso
-
-1. Entre no `index.html` com a conta administrativa.
-2. Cadastre e salve um evento.
+## Teste obrigatório
+1. Entre com a conta administrativa existente.
+2. Cadastre um evento com abertura no passado/próxima e encerramento futuro; deixe ativo.
 3. Clique em **Gerar formulário + QR Code**.
-4. Compartilhe o link ou QR Code. Ele abrirá `presenca.html?id=UUID`, sem passar pela tela administrativa.
-5. O estudante responde no próprio celular. Se o evento exigir GPS, o navegador solicita a localização e o formulário só é liberado se a posição estiver dentro de uma das localidades configuradas.
-6. As respostas são gravadas em `form_responses`.
-7. No painel, abra **Respostas** no evento. A lista é carregada do Supabase e recebe novas respostas automaticamente por Realtime; também é possível exportar CSV.
+4. Copie o link e abra em outro celular ou janela anônima.
+5. Confira se título, descrição e campos aparecem.
+6. Envie uma resposta de teste.
+7. Volte ao painel e abra **Respostas** para conferir o registro.
 
-## Testes obrigatórios antes do uso oficial
+## Limitações que ainda exigem trabalho
+- A checagem de GPS desta versão continua sendo feita no navegador. Ela não é validação segura no servidor e pode ser burlada por dispositivo modificado. Não use como controle antifraude definitivo.
+- A prevenção de duplicidade depende de uma restrição no banco compatível com a tabela e as regras atuais; este pacote não cria uma restrição nova em `form_responses`.
+- Os banners são armazenados no JSON de configuração do evento nesta versão; para uso amplo, o ideal é migrá-los para Supabase Storage.
+- Configurações auxiliares (listas de cursos/modalidades) continuam locais, mas a configuração efetiva usada no formulário é copiada para o evento ao salvá-lo.
+- Eventos criados anteriormente apenas no `localStorage` não são migrados automaticamente. Recrie esses eventos no painel depois de publicar.
 
-- Abrir o painel e autenticar com a conta administrativa.
-- Criar um evento novo e gerar o link/QR Code.
-- Abrir o link em outro celular ou janela anônima: não deve pedir login, e-mail, senha nem código.
-- Enviar uma resposta e conferir se ela aparece em **Respostas** no painel.
-- Manter a tela de respostas aberta e enviar outra resposta de um segundo aparelho: a lista e o contador devem atualizar sem recarregar.
-- Testar GPS dentro e fora das localidades cadastradas.
-- Testar encerramento e início futuro do evento.
-- Testar exportação CSV.
+O pacote foi validado quanto à sintaxe JavaScript e à presença das chamadas de integração. Não foi possível autenticar no seu projeto nem executar uma gravação real daqui; faça o teste obrigatório acima antes de usar com dados reais.
 
-## Limitações importantes
 
-- A verificação GPS desta versão é feita no navegador. Para impedir falsificação de coordenadas, a validação também precisaria ser implementada no servidor (por exemplo, função RPC/Edge Function com validação confiável).
-- A integração depende das políticas RLS já existentes no banco. Se uma política de INSERT em `form_responses` não permitir envio anônimo de eventos ativos, o formulário mostrará o erro do Supabase.
-- O ZIP foi verificado localmente, mas a gravação e as notificações não foram testadas no projeto Supabase ao vivo nesta sessão.
+ATUALIZAÇÃO — LINK PÚBLICO E RESPOSTAS EM TEMPO REAL
+
+- A área administrativa continua em index.html e exige login de administrador.
+- O link e o QR Code gerados pelo painel apontam para presenca.html?id=UUID. Essa página é independente e não pede e-mail nem senha do estudante.
+- O estudante envia a resposta diretamente para a tabela form_responses do Supabase.
+- Ao abrir Respostas de um evento no painel, a lista e o contador são atualizados automaticamente pelo Supabase Realtime.
+- Execute novamente o arquivo supabase.sql no SQL Editor do projeto para habilitar a publicação Realtime de form_responses e a leitura pública de eventos ativos.
+- No painel do Supabase, confirme também que Realtime está habilitado para a tabela public.form_responses caso a atualização automática não apareça.
+- Publique todos os arquivos juntos na raiz do GitHub Pages: index.html, presenca.html, app.js, public.js, style.css e supabase.sql.
+
+Importante: o ZIP foi verificado localmente, mas não foi possível testar login, gravação ou notificações no seu projeto Supabase ao vivo. Faça um evento de teste e envie uma resposta por outro celular antes de usar oficialmente.
