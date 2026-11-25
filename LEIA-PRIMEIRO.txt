@@ -1,39 +1,23 @@
-PRESENÇA IFBA — INTEGRAÇÃO DE EVENTOS E FORMULÁRIOS COM SUPABASE
-================================================================
+PRESENÇA IFBA — VERSÃO COM FORMULÁRIO COMPARTILHADO
 
-O QUE ESTA VERSÃO ALTERA
-- O login administrativo continua usando Supabase Auth e a autorização via public.is_admin().
-- Eventos são gravados e carregados da tabela public.events.
-- A configuração dinâmica do formulário é armazenada no campo JSONB form_config.
-- O link público usa o UUID do evento e consulta o Supabase, em vez de procurar o evento no localStorage do celular.
-- As respostas são gravadas em public.form_responses e podem ser consultadas pelo painel administrativo.
-- Ativar/desativar eventos atualiza public.events.
+O QUE FOI CORRIGIDO
+- O evento é salvo no Supabase, não apenas no navegador de quem administra.
+- O link usa o UUID real do evento salvo no banco.
+- O celular que abre o link consulta o evento no Supabase.
+- As respostas são gravadas em form_responses e aparecem no painel.
+- O acesso administrativo usa Supabase Auth e a verificação public.is_admin().
 
-ARQUIVOS
-- index.html: estrutura do site.
-- app.js: funcionalidades e integração com Supabase.
-- style.css: identidade visual.
-- config.js: URL do projeto e chave pública publishable.
-- supabase.sql: script SQL preexistente do projeto; não é necessário executá-lo novamente apenas para esta atualização.
+PARA PUBLICAR
+1. Faça backup dos arquivos atuais do GitHub.
+2. Extraia o ZIP.
+3. Substitua index.html, style.css e app.js na raiz do repositório GitHub.
+4. Envie também README.md e supabase.sql.
+5. Faça commit na branch main e aguarde o GitHub Pages publicar.
+6. No SQL Editor do Supabase, execute o arquivo supabase.sql.
+7. Entre no painel, crie um NOVO evento e gere o link. Eventos antigos que só existiam no armazenamento local precisam ser cadastrados novamente.
 
-PUBLICAÇÃO
-1. Faça backup dos arquivos atuais do repositório.
-2. Extraia este ZIP.
-3. Envie o CONTEÚDO desta pasta para a raiz publicada do repositório GitHub Pages, substituindo os arquivos correspondentes.
-4. Faça Commit changes.
-5. Aguarde o GitHub Pages publicar e recarregue o site.
-6. Entre no painel com a conta administrativa já cadastrada.
-7. Crie um NOVO evento de teste e clique em “Gerar formulário + QR Code”.
-8. Abra o link em outro celular, preferencialmente em uma janela anônima, e teste o envio.
+TESTE
+Abra o link em outro celular ou janela anônima, envie uma resposta de teste e confira em Respostas no painel.
 
-IMPORTANTE SOBRE EVENTOS ANTIGOS
-Os eventos criados pela versão demonstrativa anterior estão guardados apenas no localStorage do navegador que os criou. Eles não são transferidos automaticamente para o banco. Depois de publicar esta versão, será necessário recriar esses eventos no painel para gerar novos links compartilháveis. Os links antigos não serão convertidos automaticamente.
-
-LIMITAÇÕES QUE AINDA EXIGEM ETAPA PRÓPRIA
-- A validação de GPS ainda acontece no navegador. Ela NÃO é uma validação segura no servidor e pode ser falsificada; não use isso como controle antifraude até implementar RPC/Edge Function com validação no backend.
-- Banners são mantidos no campo image_url como conteúdo já carregado; para uso institucional, recomenda-se migrar imagens para Supabase Storage.
-- Não foi possível testar uma gravação real no projeto Supabase a partir deste ambiente. A integração foi revisada estaticamente, mas precisa do teste de ponta a ponta descrito acima.
-
-SEGURANÇA
-- config.js contém somente a chave pública publishable, apropriada para o navegador.
-- Nunca inserir chave secret ou service_role no site.
+ATENÇÃO
+A validação de GPS ainda ocorre no navegador e não é segura no servidor. Não utilize o sistema com dados reais antes de testar login, abertura do link e gravação das respostas.
