@@ -31,3 +31,12 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
 
 /* Identidade visual do formulário público */
 .student-head{display:flex;flex-direction:column;align-items:center;gap:4px}.student-head img{display:block;width:170px;max-width:70%;height:54px;max-height:54px;object-fit:contain}.student-brand-caption{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+
+
+/* Cabeçalho institucional e banner retangular no formulário público */
+.student-head{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;margin:0 auto 18px;padding:8px 0 14px;border-bottom:1px solid var(--line);}
+.student-head img{display:block;width:250px;max-width:78%;height:62px;max-height:none;object-fit:contain;background:#fff;}
+.student-brand-caption{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dark);font-weight:800;}
+.student-banner{display:block;width:100%;max-width:100%;height:auto;aspect-ratio:16/5;max-height:none;object-fit:cover;object-position:center;border-radius:0;margin:0 0 18px;background:#f2f4f2;box-sizing:border-box;}
+.banner #bannerPreview img{width:100%;aspect-ratio:16/5;height:auto;max-height:none;object-fit:cover;border-radius:0;}
+@media(max-width:600px){.student-head img{width:220px;height:56px;}.student-banner{aspect-ratio:16/5;}}
