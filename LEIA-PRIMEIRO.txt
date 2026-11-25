@@ -1,20 +1,39 @@
-PRESENÇA IFBA — PRIMEIRA ETAPA: LOGIN ADMINISTRATIVO COM SUPABASE
+PRESENÇA IFBA — INTEGRAÇÃO DE EVENTOS E FORMULÁRIOS COM SUPABASE
+================================================================
 
-O que foi alterado nesta versão:
-- O login demonstrativo que aceitava qualquer e-mail/senha foi removido.
-- O sistema agora usa Supabase Auth (e-mail e senha).
-- Depois do login, consulta a função public.is_admin() para confirmar que a conta está na lista de administradores.
-- A sessão é mantida pelo Supabase e o botão Sair encerra a sessão.
-- A conta já cadastrada no Supabase Auth e em public.admin_users deve ser usada; não é necessário criar outra conta.
+O QUE ESTA VERSÃO ALTERA
+- O login administrativo continua usando Supabase Auth e a autorização via public.is_admin().
+- Eventos são gravados e carregados da tabela public.events.
+- A configuração dinâmica do formulário é armazenada no campo JSONB form_config.
+- O link público usa o UUID do evento e consulta o Supabase, em vez de procurar o evento no localStorage do celular.
+- As respostas são gravadas em public.form_responses e podem ser consultadas pelo painel administrativo.
+- Ativar/desativar eventos atualiza public.events.
 
-ANTES DE PUBLICAR:
-1. Abra config.js.
-2. Substitua COLE_AQUI_SUA_CHAVE_SB_PUBLISHABLE pela chave pública publishable do projeto Supabase kvcqgceqgmagqlcazrxa (formato sb_publishable_...).
-3. Não coloque chave secret nem service_role nesse arquivo.
-4. Confirme no Supabase Authentication → URL Configuration que o endereço https://levysantosjoob-bit.github.io está permitido.
-5. Publique os arquivos index.html, app.js, style.css, config.js, README.md e LEIA-PRIMEIRO.txt na raiz do GitHub Pages.
+ARQUIVOS
+- index.html: estrutura do site.
+- app.js: funcionalidades e integração com Supabase.
+- style.css: identidade visual.
+- config.js: URL do projeto e chave pública publishable.
+- supabase.sql: script SQL preexistente do projeto; não é necessário executá-lo novamente apenas para esta atualização.
 
-IMPORTANTE — ESCOPO DESTA ETAPA:
-Esta entrega corrige a autenticação administrativa. O restante do aplicativo ainda contém partes demonstrativas que usam localStorage. Eventos, formulários públicos, respostas, banners e validação GPS ainda NÃO foram migrados integralmente para o Supabase. Não use esta versão como sistema de presença em produção até concluir e testar essas integrações.
+PUBLICAÇÃO
+1. Faça backup dos arquivos atuais do repositório.
+2. Extraia este ZIP.
+3. Envie o CONTEÚDO desta pasta para a raiz publicada do repositório GitHub Pages, substituindo os arquivos correspondentes.
+4. Faça Commit changes.
+5. Aguarde o GitHub Pages publicar e recarregue o site.
+6. Entre no painel com a conta administrativa já cadastrada.
+7. Crie um NOVO evento de teste e clique em “Gerar formulário + QR Code”.
+8. Abra o link em outro celular, preferencialmente em uma janela anônima, e teste o envio.
 
-A função public.is_admin() já existente precisa estar acessível por RPC para usuários autenticados e continuar verificando auth.uid() contra public.admin_users. Não altere nem exclua o usuário administrador existente.
+IMPORTANTE SOBRE EVENTOS ANTIGOS
+Os eventos criados pela versão demonstrativa anterior estão guardados apenas no localStorage do navegador que os criou. Eles não são transferidos automaticamente para o banco. Depois de publicar esta versão, será necessário recriar esses eventos no painel para gerar novos links compartilháveis. Os links antigos não serão convertidos automaticamente.
+
+LIMITAÇÕES QUE AINDA EXIGEM ETAPA PRÓPRIA
+- A validação de GPS ainda acontece no navegador. Ela NÃO é uma validação segura no servidor e pode ser falsificada; não use isso como controle antifraude até implementar RPC/Edge Function com validação no backend.
+- Banners são mantidos no campo image_url como conteúdo já carregado; para uso institucional, recomenda-se migrar imagens para Supabase Storage.
+- Não foi possível testar uma gravação real no projeto Supabase a partir deste ambiente. A integração foi revisada estaticamente, mas precisa do teste de ponta a ponta descrito acima.
+
+SEGURANÇA
+- config.js contém somente a chave pública publishable, apropriada para o navegador.
+- Nunca inserir chave secret ou service_role no site.
