@@ -1,28 +1,20 @@
-PRESENÇA IFBA — PACOTE DE TESTE
-================================
+PRESENÇA IFBA — PRIMEIRA ETAPA: LOGIN ADMINISTRATIVO COM SUPABASE
 
-ALTERAÇÕES DESTA VERSÃO
-- É possível adicionar várias localidades GPS no cadastro do evento.
-- Cada localidade tem botão “Salvar localização”, além de edição e remoção.
-- O formulário público exibe somente o logotipo pequeno do IFBA e o banner do evento, sem o texto “PRESENÇA IFBA — Campus Vitória da Conquista”.
+O que foi alterado nesta versão:
+- O login demonstrativo que aceitava qualquer e-mail/senha foi removido.
+- O sistema agora usa Supabase Auth (e-mail e senha).
+- Depois do login, consulta a função public.is_admin() para confirmar que a conta está na lista de administradores.
+- A sessão é mantida pelo Supabase e o botão Sair encerra a sessão.
+- A conta já cadastrada no Supabase Auth e em public.admin_users deve ser usada; não é necessário criar outra conta.
 
-ARQUIVOS
-- index.html: estrutura das telas do sistema.
-- style.css: estilos e identidade visual.
-- app.js: interações e funcionalidades da demonstração.
+ANTES DE PUBLICAR:
+1. Abra config.js.
+2. Substitua COLE_AQUI_SUA_CHAVE_SB_PUBLISHABLE pela chave pública publishable do projeto Supabase kvcqgceqgmagqlcazrxa (formato sb_publishable_...).
+3. Não coloque chave secret nem service_role nesse arquivo.
+4. Confirme no Supabase Authentication → URL Configuration que o endereço https://levysantosjoob-bit.github.io está permitido.
+5. Publique os arquivos index.html, app.js, style.css, config.js, README.md e LEIA-PRIMEIRO.txt na raiz do GitHub Pages.
 
-COMO TESTAR NO COMPUTADOR
-1. Extraia todos os arquivos do ZIP para a mesma pasta.
-2. Abra index.html no Chrome, Firefox ou Edge.
-3. Teste as telas e funções disponíveis na demonstração.
+IMPORTANTE — ESCOPO DESTA ETAPA:
+Esta entrega corrige a autenticação administrativa. O restante do aplicativo ainda contém partes demonstrativas que usam localStorage. Eventos, formulários públicos, respostas, banners e validação GPS ainda NÃO foram migrados integralmente para o Supabase. Não use esta versão como sistema de presença em produção até concluir e testar essas integrações.
 
-IMPORTANTE — LIMITAÇÕES DESTA VERSÃO
-Esta versão é demonstrativa e armazena dados no navegador (localStorage). O login não autentica contas institucionais pelo Supabase; eventos e respostas não são compartilhados entre dispositivos. A validação de GPS ocorre no navegador e não é uma validação segura no servidor.
-
-A biblioteca de QR Code pode depender de acesso à internet.
-
-PUBLICAÇÃO
-Você pode enviar os quatro arquivos para a raiz do repositório GitHub Pages, substituindo os arquivos correspondentes somente depois de guardar uma cópia de segurança. Isso publicará a demonstração, não uma versão de produção integrada ao Supabase.
-
-ANTES DE USAR COM DADOS REAIS
-É necessário integrar e testar Supabase Auth, banco de dados, políticas RLS, armazenamento de banners e validações no servidor. Não coloque chaves secretas/service_role no navegador. Este pacote não altera nem publica nada no GitHub ou no Supabase.
+A função public.is_admin() já existente precisa estar acessível por RPC para usuários autenticados e continuar verificando auth.uid() contra public.admin_users. Não altere nem exclua o usuário administrador existente.

@@ -40,9 +40,37 @@ function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function toast(m){let t=$('#toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>t.classList.add('hidden'),3200)}
 function showView(id){['dashboardView','builderView','settingsView','responsesView'].forEach(x=>$('#'+x).classList.toggle('hidden',x!==id))}
 function startApp(){ $('#loginScreen').classList.add('hidden');$('#appHeader').classList.remove('hidden');$('#appMain').classList.remove('hidden');showView('dashboardView');drawEvents()}
-$('#loginForm').addEventListener('submit',e=>{e.preventDefault();if(!$('#adminEmail').value.trim()||!$('#adminPassword').value){toast('Informe e-mail e senha para continuar.');return}startApp();toast('Acesso demonstrativo iniciado. A autenticação real depende do Supabase.')});
+function showLoginError(message){const el=$('#loginError');if(el){el.textContent=message;el.classList.remove('hidden')}else toast(message)}
+function clearLoginError(){const el=$('#loginError');if(el){el.textContent='';el.classList.add('hidden')}}
+async function verifyAdminSession(session){
+ if(!session?.user) return false;
+ const {data,error}=await window.supabaseClient.rpc('is_admin');
+ if(error) throw error;
+ if(data!==true) throw new Error('Esta conta não possui autorização de administrador no Presença IFBA.');
+ return true;
+}
+async function restoreAdminSession(){
+ if(!window.supabaseClient)return;
+ try{const {data:{session}}=await window.supabaseClient.auth.getSession();if(session&&await verifyAdminSession(session))startApp();}
+ catch(err){await window.supabaseClient.auth.signOut();showLoginError(err.message||'Não foi possível validar o acesso administrativo.');}
+}
+$('#loginForm').addEventListener('submit',async e=>{
+ e.preventDefault();clearLoginError();
+ if(!window.supabaseClient){showLoginError('A integração ainda não foi configurada. Abra config.js e informe a chave pública (publishable) do Supabase.');return}
+ const email=$('#adminEmail').value.trim(),password=$('#adminPassword').value;
+ if(!email||!password){showLoginError('Informe e-mail e senha para continuar.');return}
+ const btn=$('#loginForm button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Entrando…'}
+ try{
+  const {data,error}=await window.supabaseClient.auth.signInWithPassword({email,password});
+  if(error)throw error;
+  await verifyAdminSession(data.session);
+  startApp();$('#adminPassword').value='';toast('Login realizado com sucesso.');
+ }catch(err){if(window.supabaseClient)await window.supabaseClient.auth.signOut();showLoginError(err.message==='Invalid login credentials'?'E-mail ou senha incorretos.':(err.message||'Não foi possível entrar.'));}
+ finally{if(btn){btn.disabled=false;btn.textContent='Entrar'}}
+});
 $('#togglePassword').onclick=()=>{let p=$('#adminPassword');p.type=p.type==='password'?'text':'password';$('#togglePassword').textContent=p.type==='password'?'Mostrar senha':'Ocultar senha'};
-$('#logoutBtn').onclick=()=>{$('#appMain').classList.add('hidden');$('#appHeader').classList.add('hidden');$('#loginScreen').classList.remove('hidden');$('#adminPassword').value=''};
+$('#logoutBtn').onclick=async()=>{if(window.supabaseClient)await window.supabaseClient.auth.signOut();$('#appMain').classList.add('hidden');$('#appHeader').classList.add('hidden');$('#loginScreen').classList.remove('hidden');$('#adminPassword').value='';clearLoginError()};
+if(window.supabaseClient){window.supabaseClient.auth.onAuthStateChange(async(_event,session)=>{if(!session){$('#appMain').classList.add('hidden');$('#appHeader').classList.add('hidden');if(!location.hash.includes('presenca='))$('#loginScreen').classList.remove('hidden')}});restoreAdminSession();}
 $('#newEvent,#newEvent2').forEach?.(()=>{}); // no-op compatibility
 function openBuilder(id=null){editingId=id;locationDrafts=[];resetBuilder();if(id){let e=db.events.find(x=>x.id===id);if(!e)return;$('#builderTitle').textContent='Editar evento';$('#eventTitle').value=e.title;$('#eventDescription').value=e.description||'';$('#eventStart').value=e.start||'';$('#eventEnd').value=e.end||'';$('#eventCode').value=e.code||'';$('#eventActive').checked=e.active!==false;$('#keepDefaults').checked=e.keepDefaults!==false;$('#gpsOn').checked=!!e.gps;uploadedBanner=e.banner||'';if(uploadedBanner)$('#bannerPreview').innerHTML=`<img src="${uploadedBanner}" alt="Banner">`;$('#bannerName').textContent=uploadedBanner?'Banner armazenado':'Nenhum arquivo selecionado';selectedFields=e.fields||Object.keys(fieldLabels);locations=JSON.parse(JSON.stringify(e.locations||db.settings.locations));(e.questions||[]).forEach(q=>addQuestion(q));}else{locations=JSON.parse(JSON.stringify(db.settings.locations));selectedFields=Object.keys(fieldLabels)}renderLocations();renderFieldConfig();$('#gpsSettings').classList.toggle('hidden',!$('#gpsOn').checked);$('#generatedResult').classList.add('hidden');showView('builderView');switchBuilderTab('config');updateSummary()}
 function resetBuilder(){['eventTitle','eventDescription','eventStart','eventEnd','eventCode'].forEach(id=>$('#'+id).value='');$('#eventActive').checked=true;$('#keepDefaults').checked=true;$('#gpsOn').checked=false;$('#questions').innerHTML='';$('#bannerFile').value='';$('#bannerName').textContent='Nenhum arquivo selecionado';$('#bannerPreview').innerHTML='';uploadedBanner='';$('#generatedResult').classList.add('hidden')}
@@ -94,22 +122,37 @@ function viewResponses(id){currentResponseEvent=id;let e=db.events.find(x=>x.id=
 window.viewResponses=viewResponses;
 $('#exportCsv').onclick=()=>{let rows=db.responses[currentResponseEvent]||[];if(!rows.length){toast('Não há respostas para exportar.');return}let headers=['Data/hora','Nome','Matrícula','Respostas'];let csv=[headers,...rows.map(r=>[new Date(r.createdAt).toLocaleString('pt-BR'),r.name||'',r.matricula||'',JSON.stringify(r.answers||{})])].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'}));a.download='presencas-evento.csv';a.click();URL.revokeObjectURL(a.href)};
 function distanceM(a,b,c,d){let R=6371000,rad=x=>x*Math.PI/180,dl=rad(c-a),dn=rad(d-b);let x=Math.sin(dl/2)**2+Math.cos(rad(a))*Math.cos(rad(c))*Math.sin(dn/2)**2;return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}
+function showLocationBlock(message){$('#attendanceForm').classList.add('hidden');$('#publicClosed').textContent=message;$('#publicClosed').classList.remove('hidden');$('#submitAttendance').disabled=true}
+function checkPublicLocation(e,onAllowed){
+ if(!e.gps){onAllowed();return}
+ if(!navigator.geolocation){showLocationBlock('Não foi possível verificar sua localização. Ative a localização do aparelho e tente novamente.');return}
+ $('#attendanceForm').classList.add('hidden');$('#publicClosed').textContent='Verificando sua localização…';$('#publicClosed').classList.remove('hidden');
+ navigator.geolocation.getCurrentPosition(pos=>{
+  const {latitude:lat,longitude:lng,accuracy}=pos.coords;
+  if(accuracy>50){showLocationBlock('Não foi possível confirmar sua localização com precisão suficiente. Ative o GPS e tente novamente em um local com melhor sinal.');return}
+  const allowed=(e.locations||[]).some(l=>l.radius==='Livre'||distanceM(lat,lng,Number(l.lat),Number(l.lng))<=Number(l.radius));
+  if(!allowed){showLocationBlock('Infelizmente você está fora da localização adequada para a execução desse formulário. Por favor, entre em contato com a organização.');return}
+  $('#publicClosed').classList.add('hidden');$('#attendanceForm').classList.remove('hidden');$('#submitAttendance').disabled=false;onAllowed({lat,lng,accuracy});
+ },()=>showLocationBlock('Não foi possível obter sua localização. Autorize o acesso ao GPS e atualize a página.'),{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+}
 function openPublicForm(id){let e=db.events.find(x=>x.id===id);$('#appHeader').classList.add('hidden');$('#appMain').classList.add('hidden');$('#loginScreen').classList.add('hidden');$('#publicForm').classList.remove('hidden');if(!e){$('#publicTitle').textContent='Formulário não encontrado';$('#publicClosed').textContent='O link não corresponde a um evento cadastrado neste navegador.';$('#publicClosed').classList.remove('hidden');$('#attendanceForm').classList.add('hidden');return}
-$('#publicTitle').textContent=e.title;$('#publicDescription').textContent=e.description||'';$('#publicBanner').classList.toggle('hidden',!e.banner);if(e.banner)$('#publicBanner').src=e.banner;$('#publicClosed').classList.add('hidden');$('#attendanceForm').classList.remove('hidden');
+$('#publicTitle').textContent=e.title;$('#publicDescription').textContent=e.description||'';$('#publicBanner').classList.toggle('hidden',!e.banner);if(e.banner)$('#publicBanner').src=e.banner;$('#publicClosed').classList.add('hidden');$('#attendanceForm').classList.add('hidden');
 let now=Date.now(),start=e.start?new Date(e.start).getTime():0,end=e.end?new Date(e.end).getTime():Infinity,closed=!e.active||now<start||now>end;
-if(closed){$('#publicClosed').textContent=!e.active?'Este evento está desativado.':now<start?'O formulário ainda não está aberto.':'O período de confirmação foi encerrado.';$('#publicClosed').classList.remove('hidden');$('#submitAttendance').disabled=true}else $('#submitAttendance').disabled=false;
+if(closed){$('#publicClosed').textContent=!e.active?'Este evento está desativado.':now<start?'O formulário ainda não está aberto.':'O período de confirmação foi encerrado.';$('#publicClosed').classList.remove('hidden');$('#submitAttendance').disabled=true;return}
 $('#codeField').classList.toggle('hidden',!e.code);$('#publicGps').classList.toggle('hidden',!e.gps);
-let fields='';(e.fields||[]).forEach(k=>{let label=fieldLabels[k];if(!label)return;let required=true;if(k==='modality')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.modalities.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
+let fields='';(e.fields||[]).forEach(k=>{let label=fieldLabels[k];if(!label)return;if(k==='modality')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.modalities.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
 else if(k==='course')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.courses.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
 else if(k==='year')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.years.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
 else if(k==='class')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.classes.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
 else fields+=`<div class="field"><label>${label} *</label><input name="${k}" ${k==='matricula'?'inputmode="numeric"':''} required></div>`});
 (e.questions||[]).forEach((q,i)=>{let req=q.required?'required':'';fields+=`<div class="field"><label>${esc(q.prompt)} ${q.required?'*':''}</label>${q.type==='long'?`<textarea name="custom_${i}" rows="3" ${req}></textarea>`:q.type==='choice'?`<select name="custom_${i}" ${req}><option value="">Selecione</option>${q.options.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:`<input name="custom_${i}" ${req}>`}</div>`});
-$('#publicFields').innerHTML=fields;$('#attendanceForm').onsubmit=ev=>submitAttendance(ev,e)}
+$('#publicFields').innerHTML=fields;$('#attendanceForm').onsubmit=ev=>submitAttendance(ev,e);
+checkPublicLocation(e,()=>{});
+}
 function submitAttendance(ev,e){ev.preventDefault();if(e.code&&$('#publicCode').value!==e.code){toast('Código de acesso incorreto.');return}
 let form=$('#attendanceForm'),data=new FormData(form),answers={},name=data.get('name')||'',matricula=data.get('matricula')||'';for(let [k,v] of data.entries())if(k!=='name'&&k!=='matricula')answers[k]=v;
 let existing=db.responses[e.id]||[];if(matricula&&existing.some(r=>String(r.matricula).trim()===String(matricula).trim())){toast('Já existe uma presença registrada para esta matrícula neste evento.');return}
 let save=(coords=null)=>{let record={name,matricula,answers,coords,createdAt:new Date().toISOString()};existing.push(record);db.responses[e.id]=existing;persist();$('#attendanceForm').classList.add('hidden');$('#publicSuccess').textContent='Presença registrada com sucesso neste navegador. Guarde esta confirmação.';$('#publicSuccess').classList.remove('hidden')};
-if(e.gps){if(!navigator.geolocation){toast('Seu navegador não oferece geolocalização.');return}navigator.geolocation.getCurrentPosition(pos=>{let lat=pos.coords.latitude,lng=pos.coords.longitude,allowed=e.locations.some(l=>l.radius==='Livre'||distanceM(lat,lng,Number(l.lat),Number(l.lng))<=Number(l.radius));if(!allowed){toast('Você está fora das localidades autorizadas para este evento.');return}save({lat,lng,accuracy:pos.coords.accuracy})},()=>toast('Não foi possível obter sua localização. Autorize o acesso ao GPS.'),{enableHighAccuracy:true,timeout:15000,maximumAge:0})}else save()}
+if(e.gps){if(!navigator.geolocation){showLocationBlock('Não foi possível verificar sua localização. Ative a localização do aparelho e tente novamente.');return}navigator.geolocation.getCurrentPosition(pos=>{let lat=pos.coords.latitude,lng=pos.coords.longitude,accuracy=pos.coords.accuracy,allowed=accuracy<=50&&e.locations.some(l=>l.radius==='Livre'||distanceM(lat,lng,Number(l.lat),Number(l.lng))<=Number(l.radius));if(!allowed){showLocationBlock(accuracy>50?'Não foi possível confirmar sua localização com precisão suficiente. Ative o GPS e tente novamente em um local com melhor sinal.':'Infelizmente você está fora da localização adequada para a execução desse formulário. Por favor, entre em contato com a organização.');return}save({lat,lng,accuracy})},()=>showLocationBlock('Não foi possível obter sua localização. Autorize o acesso ao GPS e atualize a página.'),{enableHighAccuracy:true,timeout:20000,maximumAge:0})}else save()}
 let hash=location.hash.match(/#presenca=([^&]+)/);if(hash){openPublicForm(decodeURIComponent(hash[1]))}
 renderSettings();
