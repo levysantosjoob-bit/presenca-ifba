@@ -34,9 +34,9 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
 
 
 /* Cabeçalho institucional e banner retangular no formulário público */
-.student-head{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;margin:0 auto 18px;padding:8px 0 14px;border-bottom:1px solid var(--line);}
-.student-head img{display:block;width:250px;max-width:78%;height:62px;max-height:none;object-fit:contain;background:#fff;}
-.student-brand-caption{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dark);font-weight:800;}
+.student-head{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;margin:0 auto 18px;padding:14px 0 18px;border-bottom:1px solid var(--line);}
+.student-head img{display:block;width:330px;max-width:82%;height:72px;max-height:none;object-fit:contain;background:#fff;}
+.student-brand-caption{font-size:20px;line-height:1.25;letter-spacing:0;text-transform:none;color:var(--ink);font-weight:800;}
 .student-banner{display:block;width:100%;max-width:100%;height:auto;aspect-ratio:16/5;max-height:none;object-fit:cover;object-position:center;border-radius:0;margin:0 0 18px;background:#f2f4f2;box-sizing:border-box;}
 .banner #bannerPreview img{width:100%;aspect-ratio:16/5;height:auto;max-height:none;object-fit:cover;border-radius:0;}
-@media(max-width:600px){.student-head img{width:220px;height:56px;}.student-banner{aspect-ratio:16/5;}}
+@media(max-width:600px){.student-head img{width:280px;max-width:88%;height:62px;}.student-brand-caption{font-size:19px;}.student-banner{aspect-ratio:16/5;}}
