@@ -1,14 +1,7 @@
-PRESENÇA IFBA — CORREÇÃO DE FOTO E GRAVAÇÃO DE RESPOSTAS
+PRESENÇA IFBA — LOGO E AJUSTE DE GPS
 
-1. Faça backup do repositório atual.
-2. Extraia este ZIP.
-3. Substitua TODOS os arquivos na raiz do GitHub Pages pelos arquivos deste pacote.
-4. No Supabase > SQL Editor, execute TODO o arquivo supabase.sql.
-5. Aguarde o GitHub Pages publicar e recarregue com Ctrl + Shift + R.
+Substitua os arquivos deste pacote na raiz do GitHub Pages. Não precisa executar SQL.
 
-TESTE: crie um evento de teste com uma foto, gere o link, abra em outro celular e envie uma resposta. A tela deve dizer:
-“Formulário respondido com sucesso! Sua resposta foi registrada.”
+Para cadastrar a posição exata: edite o evento no local físico, clique em “Usar minha localização atual”, depois em “Salvar localização” e salve o evento.
 
-Depois confira a linha em Supabase > Table Editor > public.form_responses e a aba Respostas do administrador.
-
-O SQL cria o bucket event-banners e as permissões de Storage e de envio público. Não apaga eventos nem respostas.
+Teste o link público em um celular com localização precisa ativada. A leitura coleta a melhor posição por até 18 segundos e considera a margem de erro do GPS na borda do raio.
