@@ -88,3 +88,38 @@ end;
 $$;
 
 grant execute on function public.delete_event_with_responses(uuid) to authenticated;
+
+
+-- Armazenamento dos banners dos eventos. O bucket e publico para que o formulario
+-- dos estudantes consiga exibir a imagem; somente administradores autenticados podem enviar/alterar/apagar.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('event-banners', 'event-banners', true, 5242880, array['image/jpeg','image/png','image/webp'])
+on conflict (id) do update set public = true, file_size_limit = 5242880,
+  allowed_mime_types = array['image/jpeg','image/png','image/webp'];
+
+grant usage on schema storage to anon, authenticated;
+grant select, insert, update, delete on table storage.objects to anon, authenticated;
+
+drop policy if exists "Public can view event banners" on storage.objects;
+create policy "Public can view event banners" on storage.objects
+for select to anon, authenticated using (bucket_id = 'event-banners');
+
+drop policy if exists "Admins upload event banners" on storage.objects;
+create policy "Admins upload event banners" on storage.objects
+for insert to authenticated with check (bucket_id = 'event-banners' and public.is_admin());
+
+drop policy if exists "Admins update event banners" on storage.objects;
+create policy "Admins update event banners" on storage.objects
+for update to authenticated using (bucket_id = 'event-banners' and public.is_admin())
+with check (bucket_id = 'event-banners' and public.is_admin());
+
+drop policy if exists "Admins delete event banners" on storage.objects;
+create policy "Admins delete event banners" on storage.objects
+for delete to authenticated using (bucket_id = 'event-banners' and public.is_admin());
+
+-- Reforca a permissao de envio publico. A policy limita o envio a eventos ativos.
+grant insert on table public.form_responses to anon, authenticated;
+drop policy if exists "Public can submit active form responses" on public.form_responses;
+create policy "Public can submit active form responses"
+on public.form_responses for insert to anon, authenticated
+with check (exists (select 1 from public.events e where e.id = form_responses.event_id and e.is_active = true));
