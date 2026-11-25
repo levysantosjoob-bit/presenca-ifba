@@ -1,155 +1,94 @@
-/* Presença IFBA — versão reconstruída com Supabase */
-const SUPABASE_URL = 'https://kvcqgceqgmagqlcazrxa.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_pQ65ZzJSgmqHElLumvPFTQ_BblhviDt';
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const app = document.getElementById('app');
-const toast = document.getElementById('toast');
 
-const CATALOG = {
-  'Técnico Integrado':['Eletromecânica','Eletrônica','Informática','Meio Ambiente'],
-  'Técnico Subsequente':['Eletromecânica','Eletrônica','Informática','Segurança do Trabalho'],
-  'Graduação':['Engenharia Ambiental','Engenharia Civil','Engenharia Elétrica','Engenharia Mecânica','Licenciatura em Química','Sistemas de Informação'],
-  'Pós-Graduação':['Especialização Lato Sensu em Desenvolvimento Web']
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const STORE='presencaIFBA_full_demo_v1';
+const DEFAULTS={
+ modalities:['Integrado','Subsequente','Superior'],
+ courses:['Informática','Eletromecânica','Meio Ambiente','Eletrônica','Segurança do Trabalho'],
+ years:['1º ano','2º ano','3º ano','4º ano','1º semestre','2º semestre','3º semestre','4º semestre','5º semestre','6º semestre'],
+ classes:['A','B','C','D'],
+ locations:[
+  {id:'loc-aud',name:'Auditório',lat:-14.841642,lng:-40.877270,radius:10},
+  {id:'loc-marta',name:'Rua Marta Vasconcelos, 125 — Centro',lat:-14.850005,lng:-40.844120,radius:10},
+  {id:'loc-3',name:'Localidade 3',lat:-14.853657,lng:-40.819272,radius:10}
+ ]
 };
-const SYSTEM_FIELDS = [
-  {key:'nome',label:'Nome completo',type:'text',required:true},
-  {key:'matricula',label:'Número de matrícula',type:'text',required:true},
-  {key:'modalidade',label:'Modalidade',type:'modality',required:true},
-  {key:'curso',label:'Curso',type:'course',required:true},
-  {key:'periodo',label:'Série / semestre / ano',type:'period',required:true}
-];
-let currentEvent=null, currentResponses=[], draftQuestions=[], draftFields=[], selectedBanner=null;
-
-function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function say(m){toast.textContent=m;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),4000);}
-function loading(m='Carregando…'){app.innerHTML=`<section class="panel loading">${esc(m)}</section>`;}
-function fmt(v){return v?new Date(v).toLocaleString('pt-BR'):'Não definido';}
-function localValue(v){if(!v)return '';const d=new Date(v);return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,16);}
-function iso(v){return v?new Date(v).toISOString():null;}
-function urlFor(id){return `${location.href.split('#')[0]}#f-${id}`;}
-function route(){const m=(location.hash||'').match(/^#f-([0-9a-f-]{36})$/i);if(m)return publicForm(m[1]);return dashboardOrLogin();}
-window.addEventListener('hashchange',route);
-async function dashboardOrLogin(){const {data:{session}}=await db.auth.getSession();session?dashboard():login();}
-db.auth.onAuthStateChange((_e,s)=>{if(!location.hash.startsWith('#f-'))s?dashboard():login();});
-
-function login(message=''){
- app.innerHTML=`<section class="panel narrow"><p class="eyebrow">Acesso restrito</p><h1>Área administrativa</h1><p class="muted">Entre com o e-mail e a senha cadastrados no sistema.</p>${message?`<div class="alert error">${esc(message)}</div>`:''}<form id="login-form"><label>E-mail</label><input id="email" type="email" autocomplete="username" required><label>Senha</label><input id="password" type="password" autocomplete="current-password" required><div class="actions"><button class="block" type="submit">Entrar</button></div></form><p class="hint">Estudantes: utilizem o link ou QR Code enviado pela organização.</p></section>`;
- document.getElementById('login-form').addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;b.textContent='Entrando…';const {error}=await db.auth.signInWithPassword({email:document.getElementById('email').value.trim(),password:document.getElementById('password').value});if(error)login('E-mail ou senha inválidos, ou usuário sem acesso administrativo.');else dashboard();});
-}
-async function logout(){await db.auth.signOut();location.hash='';login();}
-async function dashboard(){
- loading('Carregando formulários…');
- const {data:events,error}=await db.from('events').select('*').order('created_at',{ascending:false});
- if(error){app.innerHTML=`<section class="panel"><div class="alert error">${esc(error.message)}</div><button onclick="logout()">Sair</button></section>`;return;}
- app.innerHTML=`<section class="panel"><div class="actions" style="justify-content:space-between"><div><p class="eyebrow">Administração</p><h1>Painel do Presença IFBA</h1><p class="muted">Crie formulários, compartilhe QR Codes e consulte as respostas.</p></div><button class="secondary" onclick="logout()">Sair</button></div><div class="actions"><button onclick="newForm()">＋ Criar formulário</button></div><div class="divider"></div><h2>Formulários criados</h2>${events.length?events.map(ev=>{const st=state(ev);return `<article class="event-item"><div><span class="status ${st.cls}">${st.label}</span><h3>${esc(ev.title)}</h3><div class="event-meta">Criado em ${fmt(ev.created_at)} · Abertura: ${fmt(ev.start_at)} · Encerramento: ${fmt(ev.end_at)}</div></div><div class="actions"><button class="small" onclick="manage('${ev.id}')">Visualizar</button><button class="small secondary" onclick="editForm('${ev.id}')">Editar</button></div></article>`}).join(''):'<div class="empty">Nenhum formulário cadastrado.</div>'}</section>`;
-}
-function state(e){const n=Date.now();if(!e.is_active)return{label:'Desativado',cls:'closed'};if(e.start_at&&n<new Date(e.start_at))return{label:'Agendado',cls:'scheduled'};if(e.end_at&&n>new Date(e.end_at))return{label:'Encerrado',cls:'closed'};return{label:'Aberto',cls:''};}
-function defaultFields(){return ['nome','matricula','modalidade','curso','periodo'];}
-function newForm(){currentEvent=null;selectedBanner=null;draftFields=defaultFields();draftQuestions=[];editor();}
-async function editForm(id){loading('Abrindo formulário…');const {data,error}=await db.from('events').select('*').eq('id',id).single();if(error)return say(error.message);currentEvent=data;selectedBanner=null;const c=data.form_config||{};draftFields=c.fields||defaultFields();draftQuestions=c.questions||[];editor(data);}
-function editor(ev=null){
- const cfg=ev?.form_config||{};
- app.innerHTML=`<section class="panel"><p class="eyebrow">${ev?'Edição':'Novo formulário'}</p><h1>${ev?'Editar formulário':'Cadastrar formulário'}</h1>
- <form id="builder">
- <label>Nome do formulário *</label><input id="title" required maxlength="180" value="${esc(ev?.title||'')}">
- <label>Descrição / orientações</label><textarea id="description">${esc(ev?.description||'')}</textarea>
- <h3>Imagem no topo do formulário</h3><p class="hint">Escolha uma foto ou banner do computador ou celular. A imagem será armazenada no Supabase.</p><input id="banner" type="file" accept="image/*">${ev?.image_url?`<img class="banner" id="banner-preview" src="${esc(ev.image_url)}">`:'<img class="banner hidden" id="banner-preview">'}
- <h3>Campos de identificação</h3><p class="hint">Marque os dados que o estudante deverá preencher.</p>
- <div id="fields">${SYSTEM_FIELDS.map(f=>`<label class="inline-check"><input type="checkbox" data-field="${f.key}" ${draftFields.includes(f.key)?'checked':''}>${f.label}</label>`).join('')}</div>
- <h3>Perguntas adicionais</h3><div id="questions">${questionEditorHtml()}</div><button type="button" class="secondary" onclick="addQuestion()">＋ Adicionar pergunta</button>
- <h3>Código da aula</h3><label class="inline-check"><input id="use-code" type="checkbox" ${ev?.access_code?'checked':''} onchange="document.getElementById('code-wrap').classList.toggle('hidden',!this.checked)"> Exigir código para registrar presença</label><div id="code-wrap" class="${ev?.access_code?'':'hidden'}"><input id="access-code" placeholder="Ex.: IFBA2026" value="${esc(ev?.access_code||'')}"></div>
- <h3>Horário de funcionamento</h3><div class="grid2"><div><label>Abertura</label><input id="start" type="datetime-local" value="${localValue(ev?.start_at)}"></div><div><label>Encerramento</label><input id="end" type="datetime-local" value="${localValue(ev?.end_at)}"></div></div>
- <label class="inline-check"><input id="active" type="checkbox" ${ev?.is_active!==false?'checked':''}> Formulário ativo</label>
- <div class="actions"><button type="submit">${ev?'Salvar alterações':'Publicar formulário'}</button><button type="button" class="secondary" onclick="${ev?`manage('${ev.id}')`:'dashboard()'}">Cancelar</button></div></form></section>`;
- document.getElementById('banner').addEventListener('change',previewBanner);
- document.getElementById('builder').addEventListener('submit',saveForm);
-}
-function questionEditorHtml(){return draftQuestions.map((q,i)=>`<div class="question"><div class="question-row"><input placeholder="Digite a pergunta" value="${esc(q.label)}" oninput="draftQuestions[${i}].label=this.value"><select onchange="draftQuestions[${i}].type=this.value;editor(currentEvent)"><option value="text" ${q.type==='text'?'selected':''}>Resposta livre</option><option value="choice" ${q.type==='choice'?'selected':''}>Múltipla escolha</option></select><button type="button" class="danger small" onclick="draftQuestions.splice(${i},1);editor(currentEvent)">Remover</button></div><label class="inline-check"><input type="checkbox" ${q.required?'checked':''} onchange="draftQuestions[${i}].required=this.checked"> Resposta obrigatória</label>${q.type==='choice'?`<label>Opções (uma por linha)</label><textarea oninput="draftQuestions[${i}].options=this.value">${esc((q.options||[]).join('\n'))}</textarea>`:''}</div>`).join('')||'<p class="hint">Nenhuma pergunta adicional.</p>';}
-function addQuestion(){draftQuestions.push({label:'',type:'text',required:false,options:[]});editor(currentEvent);}
-function previewBanner(e){const f=e.target.files[0],img=document.getElementById('banner-preview');if(!f)return;if(!f.type.startsWith('image/'))return say('Escolha um arquivo de imagem.');img.src=URL.createObjectURL(f);img.classList.remove('hidden');}
-async function saveForm(e){
- e.preventDefault();
- const title=document.getElementById('title').value.trim();if(!title)return;
- const start=document.getElementById('start').value,end=document.getElementById('end').value;if(start&&end&&new Date(start)>=new Date(end))return say('O encerramento precisa ser posterior à abertura.');
- const fields=[...document.querySelectorAll('[data-field]:checked')].map(x=>x.dataset.field);
- if(!fields.length&&!draftQuestions.length)return say('Selecione ao menos um campo ou crie uma pergunta.');
- const questions=draftQuestions.map(q=>({...q,label:(q.label||'').trim(),options:q.type==='choice'?String(q.options||'').split('\n').map(x=>x.trim()).filter(Boolean):[]})).filter(q=>q.label);
- if(questions.some(q=>q.type==='choice'&&q.options.length<2))return say('Cada pergunta de múltipla escolha precisa de pelo menos duas opções.');
- const useCode=document.getElementById('use-code').checked,code=useCode?document.getElementById('access-code').value.trim().toUpperCase():null;
- if(useCode&&!code)return say('Digite o código da aula.');
- const payload={title,description:document.getElementById('description').value.trim()||null,start_at:iso(start),end_at:iso(end),is_active:document.getElementById('active').checked,form_config:{fields,questions,requires_code:useCode},access_code:code};
- const b=e.submitter;b.disabled=true;b.textContent='Salvando…';
- let result=currentEvent?await db.from('events').update(payload).eq('id',currentEvent.id).select().single():await db.from('events').insert(payload).select().single();
- if(result.error){b.disabled=false;b.textContent='Tentar novamente';return say('Erro ao salvar: '+result.error.message);}
- let ev=result.data;
- const file=document.getElementById('banner').files[0];
- if(file){const ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');const path=`${ev.id}/${Date.now()}.${ext}`;const up=await db.storage.from('event-banners').upload(path,file,{upsert:true,contentType:file.type});if(up.error){say('Formulário salvo, mas a imagem não foi enviada: '+up.error.message);}else{const {data}=db.storage.from('event-banners').getPublicUrl(path);const upd=await db.from('events').update({image_url:data.publicUrl}).eq('id',ev.id).select().single();if(!upd.error)ev=upd.data;}}
- say('Formulário salvo.');manage(ev.id);
-}
-async function manage(id){
- loading('Carregando formulário…');
- const [{data:ev,error},{count}]=await Promise.all([db.from('events').select('*').eq('id',id).single(),db.from('form_responses').select('*',{count:'exact',head:true}).eq('event_id',id)]);
- if(error){app.innerHTML=`<section class="panel"><div class="alert error">${esc(error.message)}</div><button onclick="dashboard()">Voltar</button></section>`;return;}
- const u=urlFor(id),st=state(ev);
- app.innerHTML=`<section class="panel"><div class="actions" style="justify-content:space-between"><div><p class="eyebrow">Formulário publicado</p><h1>${esc(ev.title)}</h1><span class="status ${st.cls}">${st.label}</span></div><button class="secondary" onclick="dashboard()">← Painel</button></div>${ev.image_url?`<img class="banner" src="${esc(ev.image_url)}">`:''}<p class="muted">${esc(ev.description||'Sem descrição.')}</p><div class="statrow"><div class="stat"><strong>${count||0}</strong><span>Respostas recebidas</span></div><div class="stat"><strong>${ev.is_active?'Sim':'Não'}</strong><span>Formulário ativo</span></div></div><div class="divider"></div><div class="qr-layout"><div id="qr" class="qr-box"></div><div style="flex:1;min-width:220px"><h3>Link e QR Code</h3><p class="hint">Compartilhe este link com os estudantes.</p><div class="link-row"><input id="public-link" readonly value="${esc(u)}"><button class="secondary" onclick="copyLink()">Copiar</button></div><div class="actions"><button class="secondary" onclick="downloadQr()">Baixar QR Code</button></div></div></div><div class="divider"></div><div class="actions"><button onclick="responses('${id}')">Consultar respostas</button><button class="secondary" onclick="editForm('${id}')">Editar formulário</button><button class="secondary" onclick="toggleActive('${id}',${!ev.is_active})">${ev.is_active?'Desativar':'Ativar'}</button><button class="danger" onclick="removeForm('${id}')">Excluir</button></div></section>`;
- new QRCode(document.getElementById('qr'),{text:u,width:190,height:190});
-}
-function copyLink(){const x=document.getElementById('public-link');x.select();navigator.clipboard?.writeText(x.value).then(()=>say('Link copiado!')).catch(()=>{document.execCommand('copy');say('Link copiado!')});}
-function downloadQr(){const c=document.querySelector('#qr canvas');if(!c)return;const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='qrcode-presenca-ifba.png';a.click();}
-async function toggleActive(id,active){const {error}=await db.from('events').update({is_active:active}).eq('id',id);if(error)say(error.message);else manage(id);}
-async function removeForm(id){if(!confirm('Excluir este formulário e todas as respostas? Esta ação não pode ser desfeita.'))return;const {error}=await db.from('events').delete().eq('id',id);if(error)say('Não foi possível excluir: '+error.message);else{say('Formulário excluído.');dashboard();}}
-async function responses(id){
- loading('Consultando respostas…');
- const [{data:ev,error:e1},{data:rows,error:e2}]=await Promise.all([db.from('events').select('id,title').eq('id',id).single(),db.from('form_responses').select('*').eq('event_id',id).order('created_at',{ascending:false})]);
- if(e1||e2){app.innerHTML=`<section class="panel"><div class="alert error">${esc((e1||e2).message)}</div><button onclick="manage('${id}')">Voltar</button></section>`;return;}
- currentResponses=rows||[];
- const keys=[...new Set(currentResponses.flatMap(r=>Object.keys(r.answers||{})))];
- app.innerHTML=`<section class="panel"><p class="eyebrow">Relatório</p><h1>${esc(ev.title)}</h1><p class="muted">${rows.length} resposta(s).</p><div class="actions"><button onclick="exportResponses('${id}')">Exportar CSV</button><button class="secondary" onclick="manage('${id}')">Voltar ao formulário</button></div><div class="table-wrap">${rows.length?`<table><thead><tr><th>Data e hora</th>${keys.map(k=>`<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr><td>${fmt(r.created_at)}</td>${keys.map(k=>`<td>${esc(r.answers?.[k]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`:'<div class="empty">Ainda não há respostas.</div>'}</div></section>`;
-}
-function exportResponses(id){const keys=[...new Set(currentResponses.flatMap(r=>Object.keys(r.answers||{})))];const q=x=>'"'+String(x??'').replace(/"/g,'""')+'"';const lines=[['Data e hora',...keys].map(q).join(';'),...currentResponses.map(r=>[new Date(r.created_at).toLocaleString('pt-BR'),...keys.map(k=>r.answers?.[k]??'')].map(q).join(';'))];const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`respostas-${id}.csv`;a.click();URL.revokeObjectURL(a.href);}
-
-function periodsFor(modality){if(modality==='Técnico Integrado')return['1º ano','2º ano','3º ano','4º ano'];if(modality==='Técnico Subsequente')return['1º semestre','2º semestre','3º semestre','4º semestre'];if(modality==='Graduação')return Array.from({length:10},(_,i)=>`${i+1}º semestre`);return['Especialização'];}
-async function publicForm(id){
- loading('Abrindo formulário…');
- const {data:ev,error}=await db.from('events').select('id,title,description,image_url,is_active,start_at,end_at,form_config').eq('id',id).maybeSingle();
- if(error||!ev){app.innerHTML='<section class="panel narrow"><h1>Formulário não encontrado</h1><p>Confira o link ou fale com a organização.</p></section>';return;}
- const now=Date.now();if(!ev.is_active)return closed(ev,'Este formulário está desativado.');if(ev.start_at&&now<new Date(ev.start_at))return closed(ev,'As respostas ainda não estão abertas. Abertura: '+fmt(ev.start_at));if(ev.end_at&&now>new Date(ev.end_at))return closed(ev,'O período de respostas foi encerrado.');
- const cfg=ev.form_config||{},fields=cfg.fields||defaultFields(),questions=cfg.questions||[];
- const html=fields.map(key=>renderSystemField(key)).join('')+questions.map((q,i)=>renderQuestion(q,i)).join('');
- app.innerHTML=`<section class="panel narrow">${ev.image_url?`<img class="banner" src="${esc(ev.image_url)}">`:''}<p class="eyebrow">Registro de presença · IFBA</p><h1>${esc(ev.title)}</h1>${ev.description?`<p class="muted">${esc(ev.description)}</p>`:''}<div class="alert success">Formulário disponível para preenchimento.</div><form id="public-form">${html}${ev.form_config?.requires_code?'<label>Código da aula *</label><input id="code" autocomplete="off" required>':''}<div class="actions"><button class="block" type="submit">Enviar resposta</button></div><p class="hint">Confira seus dados antes de enviar. A resposta será vinculada a este formulário.</p></form></section>`;
- document.getElementById('modality')?.addEventListener('change',updateCourses);
- document.getElementById('course')?.addEventListener('change',updatePeriods);
- document.getElementById('period')?.addEventListener('change',updateClass);
- document.getElementById('public-form').addEventListener('submit',e=>submitPublic(e,ev));
-}
-function renderSystemField(key){
- const f=SYSTEM_FIELDS.find(x=>x.key===key);if(!f)return '';
- if(key==='modalidade')return `<label>Modalidade *</label><select id="modality" required><option value="">Selecione</option>${Object.keys(CATALOG).map(x=>`<option>${esc(x)}</option>`).join('')}</select>`;
- if(key==='curso')return '<label>Curso *</label><select id="course" required disabled><option>Selecione a modalidade primeiro</option></select>';
- if(key==='periodo')return '<label>Série / semestre / ano *</label><select id="period" required disabled><option>Selecione o curso primeiro</option></select><div id="class-wrap" class="hidden"><label>Turma *</label><select id="class-name"><option value="">Selecione</option><option>Turma A</option><option>Turma B</option></select></div>';
- return `<label>${f.label} *</label><input id="${key}" required maxlength="180">`;
-}
-function renderQuestion(q,i){if(q.type==='choice')return `<div class="question"><label>${esc(q.label)}${q.required?' *':''}</label>${(q.options||[]).map((o,j)=>`<label class="option"><input type="radio" name="q-${i}" value="${esc(o)}" ${q.required?'required':''}>${esc(o)}</label>`).join('')}</div>`;return `<label>${esc(q.label)}${q.required?' *':''}</label><input id="q-${i}" ${q.required?'required':''}>`;}
-function closed(ev,msg){app.innerHTML=`<section class="panel narrow"><p class="eyebrow">Presença IFBA</p><h1>${esc(ev.title)}</h1><div class="alert">${esc(msg)}</div><p class="muted">Se precisar, procure a organização do evento.</p></section>`;}
-function updateCourses(){const m=document.getElementById('modality').value,c=document.getElementById('course');c.innerHTML='<option value="">Selecione o curso</option>'+(CATALOG[m]||[]).map(x=>`<option>${esc(x)}</option>`).join('');c.disabled=!m;const p=document.getElementById('period');p.innerHTML='<option value="">Selecione o curso primeiro</option>';p.disabled=true;updateClass();}
-function updatePeriods(){const m=document.getElementById('modality').value,c=document.getElementById('course').value,p=document.getElementById('period');p.innerHTML='<option value="">Selecione</option>'+(c?periodsFor(m):[]).map(x=>`<option>${x}</option>`).join('');p.disabled=!c;updateClass();}
-function updateClass(){const m=document.getElementById('modality')?.value,c=document.getElementById('course')?.value,p=document.getElementById('period')?.value;const show=m==='Técnico Integrado'&&c==='Eletrônica'&&['1º ano','2º ano','3º ano','4º ano'].includes(p);const w=document.getElementById('class-wrap');if(w){w.classList.toggle('hidden',!show);document.getElementById('class-name').required=show;if(!show)document.getElementById('class-name').value='';}}
-async function submitPublic(e,ev){
- e.preventDefault();const now=Date.now();if(!ev.is_active||(ev.start_at&&now<new Date(ev.start_at))||(ev.end_at&&now>new Date(ev.end_at)))return closed(ev,'O período de respostas não está aberto.');
- const submittedCode=ev.form_config?.requires_code?document.getElementById('code').value.trim().toUpperCase():null;
- const cfg=ev.form_config||{},fields=cfg.fields||defaultFields(),answers={};
- if(fields.includes('nome'))answers['Nome completo']=document.getElementById('nome').value.trim();
- if(fields.includes('matricula'))answers['Número de matrícula']=document.getElementById('matricula').value.trim();
- if(fields.includes('modalidade'))answers['Modalidade']=document.getElementById('modality').value;
- if(fields.includes('curso'))answers['Curso']=document.getElementById('course').value;
- if(fields.includes('periodo'))answers['Série / semestre / ano']=document.getElementById('period').value;
- if(fields.includes('periodo')&&document.getElementById('class-name')&&!document.getElementById('class-wrap').classList.contains('hidden'))answers['Turma']=document.getElementById('class-name').value;
- (cfg.questions||[]).forEach((q,i)=>{answers[q.label]=q.type==='choice'?(document.querySelector(`[name="q-${i}"]:checked`)?.value||''):document.getElementById(`q-${i}`).value.trim();});
- if(Object.values(answers).some(v=>!String(v).trim()&&v!==''))return say('Confira os campos.');
- const b=e.submitter;b.disabled=true;b.textContent='Enviando…';
- const enrollment=answers['Número de matrícula']||null;
- const {error}=await db.rpc('submit_form_response',{p_event_id:ev.id,p_code:submittedCode,p_enrollment:enrollment,p_answers:answers});
- if(error){b.disabled=false;b.textContent='Tentar novamente';if(error.code==='23505')return say('Esta matrícula já registrou presença neste formulário.');if((error.message||'').toLowerCase().includes('código'))return say('Código da aula incorreto.');return say('Não foi possível enviar: '+error.message);}
- app.innerHTML=`<section class="panel narrow"><div class="alert success"><strong>Resposta registrada com sucesso!</strong></div><h1>Obrigado${answers['Nome completo']?', '+esc(answers['Nome completo']):''}!</h1><p class="muted">Seu registro foi recebido pelo Presença IFBA.</p></section>`;
-}
-route();
+let db=loadDB(),editingId=null,currentResponseEvent=null,questionSeq=0,uploadedBanner='';
+function loadDB(){try{return JSON.parse(localStorage.getItem(STORE))||{events:[],settings:structuredClone(DEFAULTS),responses:{}}}catch(e){return {events:[],settings:JSON.parse(JSON.stringify(DEFAULTS)),responses:{}}}}
+function persist(){localStorage.setItem(STORE,JSON.stringify(db))}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function toast(m){let t=$('#toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>t.classList.add('hidden'),3200)}
+function showView(id){['dashboardView','builderView','settingsView','responsesView'].forEach(x=>$('#'+x).classList.toggle('hidden',x!==id))}
+function startApp(){ $('#loginScreen').classList.add('hidden');$('#appHeader').classList.remove('hidden');$('#appMain').classList.remove('hidden');showView('dashboardView');drawEvents()}
+$('#loginForm').addEventListener('submit',e=>{e.preventDefault();if(!$('#adminEmail').value.trim()||!$('#adminPassword').value){toast('Informe e-mail e senha para continuar.');return}startApp();toast('Acesso demonstrativo iniciado. A autenticação real depende do Supabase.')});
+$('#togglePassword').onclick=()=>{let p=$('#adminPassword');p.type=p.type==='password'?'text':'password';$('#togglePassword').textContent=p.type==='password'?'Mostrar senha':'Ocultar senha'};
+$('#logoutBtn').onclick=()=>{$('#appMain').classList.add('hidden');$('#appHeader').classList.add('hidden');$('#loginScreen').classList.remove('hidden');$('#adminPassword').value=''};
+$('#newEvent,#newEvent2').forEach?.(()=>{}); // no-op compatibility
+function openBuilder(id=null){editingId=id;resetBuilder();if(id){let e=db.events.find(x=>x.id===id);if(!e)return;$('#builderTitle').textContent='Editar evento';$('#eventTitle').value=e.title;$('#eventDescription').value=e.description||'';$('#eventStart').value=e.start||'';$('#eventEnd').value=e.end||'';$('#eventCode').value=e.code||'';$('#eventActive').checked=e.active!==false;$('#keepDefaults').checked=e.keepDefaults!==false;$('#gpsOn').checked=!!e.gps;uploadedBanner=e.banner||'';if(uploadedBanner)$('#bannerPreview').innerHTML=`<img src="${uploadedBanner}" alt="Banner">`;$('#bannerName').textContent=uploadedBanner?'Banner armazenado':'Nenhum arquivo selecionado';selectedFields=e.fields||Object.keys(fieldLabels);locations=JSON.parse(JSON.stringify(e.locations||db.settings.locations));(e.questions||[]).forEach(q=>addQuestion(q));}else{locations=JSON.parse(JSON.stringify(db.settings.locations));selectedFields=Object.keys(fieldLabels)}renderLocations();renderFieldConfig();$('#gpsSettings').classList.toggle('hidden',!$('#gpsOn').checked);$('#generatedResult').classList.add('hidden');showView('builderView');switchBuilderTab('config');updateSummary()}
+function resetBuilder(){['eventTitle','eventDescription','eventStart','eventEnd','eventCode'].forEach(id=>$('#'+id).value='');$('#eventActive').checked=true;$('#keepDefaults').checked=true;$('#gpsOn').checked=false;$('#questions').innerHTML='';$('#bannerFile').value='';$('#bannerName').textContent='Nenhum arquivo selecionado';$('#bannerPreview').innerHTML='';uploadedBanner='';$('#generatedResult').classList.add('hidden')}
+const fieldLabels={name:'Nome completo',matricula:'Matrícula',modality:'Modalidade',course:'Curso',year:'Ano/semestre',class:'Turma'};
+let selectedFields=Object.keys(fieldLabels),locations=JSON.parse(JSON.stringify(DEFAULTS.locations));
+function renderFieldConfig(){$('#studentFieldConfig').innerHTML=Object.entries(fieldLabels).map(([k,v])=>`<label class="switchrow"><span><strong>${v}</strong><small>Campo de identificação</small></span><input class="switch fieldToggle" type="checkbox" data-field="${k}" ${selectedFields.includes(k)?'checked':''}></label>`).join('');$$('.fieldToggle').forEach(x=>x.onchange=()=>{selectedFields=$$('.fieldToggle:checked').map(y=>y.dataset.field);updateSummary()})}
+function renderLocations(){$('#locations').innerHTML=locations.map((l,i)=>`<div class="location"><div class="lochead"><strong>${esc(l.name)}</strong><button class="btn ghost" onclick="removeLocation(${i})">Remover</button></div><div class="locgrid"><div class="field"><label>Nome da localidade</label><input value="${esc(l.name)}" onchange="editLocation(${i},'name',this.value)"></div><div class="field"><label>Raio permitido</label><select onchange="editLocation(${i},'radius',this.value)">${[10,20,30,40,50,100,200,500,1000,'Livre'].map(r=>`<option value="${r}" ${String(l.radius)===String(r)?'selected':''}>${r==='Livre'?'Livre':r+' m'}</option>`).join('')}</select></div><div class="field"><label>Latitude</label><input type="number" step="any" value="${l.lat}" onchange="editLocation(${i},'lat',this.value)"></div><div class="field"><label>Longitude</label><input type="number" step="any" value="${l.lng}" onchange="editLocation(${i},'lng',this.value)"></div></div></div>`).join('')}
+window.editLocation=(i,k,v)=>{locations[i][k]=k==='name'||k==='radius'?v:Number(v);updateSummary()};
+window.removeLocation=i=>{if(confirm('Remover esta localidade do evento?')){locations.splice(i,1);renderLocations()}};
+$('#addLocation').onclick=()=>{locations.push({id:'loc-'+Date.now(),name:'Nova localidade',lat:'',lng:'',radius:10});renderLocations()};
+$('#gpsOn').onchange=()=>{$('#gpsSettings').classList.toggle('hidden',!$('#gpsOn').checked);updateSummary()};
+$('#keepDefaults').onchange=()=>{if($('#keepDefaults').checked){selectedFields=Object.keys(fieldLabels);renderFieldConfig()}updateSummary()};
+$('#bannerFile').onchange=e=>{let f=e.target.files[0];if(!f)return;if(f.size>1800000){toast('A imagem deve ter até 1,8 MB para armazenamento local.');e.target.value='';return}let r=new FileReader();r.onload=()=>{uploadedBanner=r.result;$('#bannerName').textContent=f.name;$('#bannerPreview').innerHTML=`<img src="${uploadedBanner}" alt="Prévia do banner">`};r.readAsDataURL(f)};
+function addQuestion(q=null){let id=++questionSeq;let el=document.createElement('div');el.className='question';el.dataset.qid=id;el.innerHTML=`<div class="qtop"><strong>Pergunta adicional</strong><div class="toolbar"><button class="btn secondary small" type="button" onclick="moveQuestion(this,-1)">↑</button><button class="btn secondary small" type="button" onclick="moveQuestion(this,1)">↓</button><button class="btn ghost" type="button" onclick="this.closest('.question').remove()">Excluir</button></div></div><div class="field"><label>Enunciado</label><input class="qprompt" placeholder="Digite a pergunta"></div><div class="grid2"><div class="field"><label>Tipo de resposta</label><select class="qtype"><option value="short">Texto curto</option><option value="long">Texto longo</option><option value="choice">Múltipla escolha</option></select></div><div class="field"><label>Obrigatoriedade</label><select class="qrequired"><option value="true">Obrigatória</option><option value="false">Opcional</option></select></div></div><div class="options hidden"><label>Alternativas</label><div class="optionList"></div><button class="btn secondary small addOption" type="button">＋ Adicionar alternativa</button></div>`;
+$('#questions').appendChild(el);let sel=el.querySelector('.qtype');sel.onchange=()=>el.querySelector('.options').classList.toggle('hidden',sel.value!=='choice');el.querySelector('.addOption').onclick=()=>addOption(el);if(q){el.querySelector('.qprompt').value=q.prompt;sel.value=q.type;el.querySelector('.qrequired').value=String(q.required);if(q.type==='choice'){el.querySelector('.options').classList.remove('hidden');q.options.forEach(o=>addOption(el,o))}}updateQuestionCount();return el}
+function addOption(el,value=''){let row=document.createElement('div');row.className='choice';row.innerHTML=`<span>•</span><input placeholder="Alternativa" value="${esc(value)}"><button type="button" class="btn ghost">Remover</button>`;row.querySelector('button').onclick=()=>row.remove();el.querySelector('.optionList').appendChild(row)}
+window.moveQuestion=(btn,dir)=>{let el=btn.closest('.question'),sib=dir<0?el.previousElementSibling:el.nextElementSibling;if(sib){if(dir<0)el.parentNode.insertBefore(el,sib);else el.parentNode.insertBefore(sib,el)}};
+$('#addQuestion').onclick=()=>addQuestion();
+function updateQuestionCount(){let n=$$('#questions .question').length;$('#questionCount').textContent=n?`${n} pergunta(s) adicional(is)`:'Nenhuma pergunta adicionada'}
+function collectQuestions(){return $$('#questions .question').map(q=>({prompt:q.querySelector('.qprompt').value.trim(),type:q.querySelector('.qtype').value,required:q.querySelector('.qrequired').value==='true',options:[...q.querySelectorAll('.optionList input')].map(x=>x.value.trim()).filter(Boolean)})).filter(q=>q.prompt)}
+function updateSummary(){$('#summaryTitle').textContent=$('#eventTitle').value||'PRESENÇA IFBA';$('#summaryDescription').textContent=$('#eventDescription').value||'Formulário de presença do evento';$('#summaryFields').textContent='Campos: '+selectedFields.map(k=>fieldLabels[k]).join(', ');$('#summaryGps').textContent=$('#gpsOn').checked?'GPS obrigatório · '+locations.length+' localidade(s)':'GPS desativado'}
+['eventTitle','eventDescription'].forEach(id=>$('#'+id).addEventListener('input',updateSummary));
+function collectEvent(){return {id:editingId||'evt-'+Date.now(),title:$('#eventTitle').value.trim(),description:$('#eventDescription').value.trim(),start:$('#eventStart').value,end:$('#eventEnd').value,code:$('#eventCode').value.trim(),active:$('#eventActive').checked,fields:selectedFields,keepDefaults:$('#keepDefaults').checked,questions:collectQuestions(),gps:$('#gpsOn').checked,locations:JSON.parse(JSON.stringify(locations)),banner:uploadedBanner,createdAt:editingId?(db.events.find(e=>e.id===editingId)?.createdAt||new Date().toISOString()):new Date().toISOString()}}
+function validateEvent(e){if(!e.title){toast('Informe o nome do evento.');return false}if(!e.start||!e.end){toast('Informe a data e a hora de abertura e encerramento.');return false}if(new Date(e.end)<=new Date(e.start)){toast('O encerramento deve ser posterior à abertura.');return false}if(!e.fields.length&&!e.questions.length){toast('Selecione ao menos um campo ou pergunta.');return false}if(e.gps&&(!e.locations.length||e.locations.some(l=>!Number.isFinite(Number(l.lat))||!Number.isFinite(Number(l.lng))))){toast('Revise as coordenadas das localidades GPS.');return false}return true}
+function saveEvent(generate=false){let e=collectEvent();if(!validateEvent(e))return;let i=db.events.findIndex(x=>x.id===e.id);if(i>=0)db.events[i]=e;else db.events.unshift(e);persist();drawEvents();if(generate){let url=location.href.split('#')[0]+'#presenca='+encodeURIComponent(e.id);e.url=url;persist();$('#generatedResult').classList.remove('hidden');$('#studentLink').href=url;$('#studentLink').textContent=url;$('#qrBox').innerHTML='';if(window.QRCode)new QRCode($('#qrBox'),{text:url,width:160,height:160});else $('#qrBox').textContent='Biblioteca de QR Code indisponível.';toast('Evento salvo e formulário gerado.')}else toast('Evento salvo neste navegador.')}
+$('#saveEvent').onclick=()=>saveEvent(false);$('#generateForm').onclick=()=>saveEvent(true);
+$('#copyLink').onclick=async()=>{try{await navigator.clipboard.writeText($('#studentLink').href);toast('Link copiado.')}catch(e){toast('Copie o endereço exibido no campo do link.')}};
+$('#showQr').onclick=()=>$('#qrBox').classList.toggle('hidden');
+function drawEvents(){let q=($('#eventSearch')?.value||'').toLowerCase();let items=db.events.filter(e=>e.title.toLowerCase().includes(q));$('#eventCount').textContent=`${db.events.length} evento(s) cadastrado(s)`;$('#eventList').innerHTML=items.length?items.map(e=>`<div class="event-row"><div class="rowhead"><div><strong>${esc(e.title)}</strong><div class="sub" style="margin:4px 0 0">${e.start?new Date(e.start).toLocaleString('pt-BR'):'Sem data'} · <span class="pill">${e.active?'Ativo':'Inativo'}</span> · ${(db.responses[e.id]||[]).length} participante(s)</div></div><div class="toolbar"><button class="btn secondary small" onclick="editEvent('${e.id}')">Editar</button><button class="btn secondary small" onclick="viewResponses('${e.id}')">Respostas</button><button class="btn secondary small" onclick="toggleEvent('${e.id}')">${e.active?'Desativar':'Ativar'}</button><button class="btn secondary small" onclick="copyEventLink('${e.id}')">Copiar link</button><button class="btn ghost" onclick="deleteEvent('${e.id}')">Excluir</button></div></div></div>`).join(''):'<div class="empty">Nenhum evento encontrado. Clique em “Cadastrar evento” para começar.</div>'}
+window.editEvent=id=>openBuilder(id);
+window.toggleEvent=id=>{let e=db.events.find(x=>x.id===id);e.active=!e.active;persist();drawEvents();toast('Situação do evento atualizada.')};
+window.deleteEvent=id=>{if(confirm('Excluir este evento e suas respostas armazenadas neste navegador?')){db.events=db.events.filter(x=>x.id!==id);delete db.responses[id];persist();drawEvents();toast('Evento excluído.')}};
+window.copyEventLink=async id=>{let url=location.href.split('#')[0]+'#presenca='+encodeURIComponent(id);try{await navigator.clipboard.writeText(url);toast('Link copiado.')}catch(e){prompt('Copie o link do formulário:',url)}};
+$('#eventSearch').oninput=drawEvents;
+$('#newEvent').onclick=()=>openBuilder();$('#newEvent2').onclick=()=>openBuilder();$('#goEvents').onclick=()=>$('#eventListCard').scrollIntoView({behavior:'smooth'});$('#goSettings').onclick=()=>{showView('settingsView');renderSettings()};
+$('#backDashboard,#settingsBack,#responsesBack').forEach?.(()=>{});
+['backDashboard','settingsBack','responsesBack'].forEach(id=>$('#'+id).onclick=()=>{showView('dashboardView');drawEvents()});
+$$('.tab').forEach(b=>b.onclick=()=>switchBuilderTab(b.dataset.tab));
+function switchBuilderTab(tab){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$('#configTab').classList.toggle('hidden',tab!=='config');$('#studentPreviewTab').classList.toggle('hidden',tab!=='studentPreview');if(tab==='studentPreview')renderBuilderPreview()}
+function renderBuilderPreview(){let e=collectEvent();$('#previewStudent').innerHTML=`<h2>${esc(e.title||'Nome do evento')}</h2><p>${esc(e.description)}</p>${e.banner?`<img class="student-banner" src="${e.banner}">`:''}<p class="muted">Campos: ${e.fields.map(x=>fieldLabels[x]).join(', ')}</p>${e.questions.map(q=>`<p><strong>${esc(q.prompt)}</strong> · ${q.type}</p>`).join('')}`}
+function renderSettings(){renderSimpleList('modalities','modalityList','modalidade');renderSimpleList('courses','courseList','curso');renderSimpleList('years','yearList','ano/semestre');renderSimpleList('classes','classList','turma');$('#settingsLocations').innerHTML=db.settings.locations.map((l,i)=>`<div class="location"><div class="rowhead"><strong>${esc(l.name)}</strong><button class="btn ghost" onclick="removeSettingLocation(${i})">Excluir</button></div><p class="coords">${l.lat}, ${l.lng} · Raio ${l.radius==='Livre'?'livre':l.radius+' m'}</p></div>`).join('')}
+function renderSimpleList(key,target,label){$('#'+target).innerHTML=db.settings[key].map((v,i)=>`<div class="switchrow"><span>${esc(v)}</span><button class="btn ghost" onclick="removeSetting('${key}',${i})">Excluir</button></div>`).join('')||'<p class="sub">Nenhum item cadastrado.</p>'}
+window.removeSetting=(key,i)=>{if(confirm('Excluir este item?')){db.settings[key].splice(i,1);persist();renderSettings()}};
+function addSetting(key,input){let v=$('#'+input).value.trim();if(!v)return;db.settings[key].push(v);$('#'+input).value='';persist();renderSettings()}
+$('#addModality').onclick=()=>addSetting('modalities','newModality');$('#addCourse').onclick=()=>addSetting('courses','newCourse');$('#addYear').onclick=()=>addSetting('years','newYear');$('#addClass').onclick=()=>addSetting('classes','newClass');
+window.removeSettingLocation=i=>{if(confirm('Excluir esta localidade das configurações?')){db.settings.locations.splice(i,1);persist();renderSettings()}};
+$('#addSettingsLocation').onclick=()=>{let name=prompt('Nome da localidade:');if(!name)return;let lat=prompt('Latitude:');let lng=prompt('Longitude:');if(!Number.isFinite(Number(lat))||!Number.isFinite(Number(lng))){toast('Coordenadas inválidas.');return}db.settings.locations.push({id:'loc-'+Date.now(),name,lat:Number(lat),lng:Number(lng),radius:10});persist();renderSettings()};
+function viewResponses(id){currentResponseEvent=id;let e=db.events.find(x=>x.id===id);showView('responsesView');$('#responsesTitle').textContent='Respostas — '+e.title;let rows=db.responses[id]||[];$('#responseCount').textContent=rows.length+' registro(s)';$('#responsesTable').innerHTML=rows.length?`<table><thead><tr><th>Data/hora</th><th>Nome</th><th>Matrícula</th><th>Demais respostas</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${new Date(r.createdAt).toLocaleString('pt-BR')}</td><td>${esc(r.name||'—')}</td><td>${esc(r.matricula||'—')}</td><td>${Object.entries(r.answers||{}).map(([k,v])=>`<strong>${esc(k)}:</strong> ${esc(v)}`).join('<br>')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Ainda não há respostas para este evento.</div>'}
+window.viewResponses=viewResponses;
+$('#exportCsv').onclick=()=>{let rows=db.responses[currentResponseEvent]||[];if(!rows.length){toast('Não há respostas para exportar.');return}let headers=['Data/hora','Nome','Matrícula','Respostas'];let csv=[headers,...rows.map(r=>[new Date(r.createdAt).toLocaleString('pt-BR'),r.name||'',r.matricula||'',JSON.stringify(r.answers||{})])].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'}));a.download='presencas-evento.csv';a.click();URL.revokeObjectURL(a.href)};
+function distanceM(a,b,c,d){let R=6371000,rad=x=>x*Math.PI/180,dl=rad(c-a),dn=rad(d-b);let x=Math.sin(dl/2)**2+Math.cos(rad(a))*Math.cos(rad(c))*Math.sin(dn/2)**2;return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}
+function openPublicForm(id){let e=db.events.find(x=>x.id===id);$('#appHeader').classList.add('hidden');$('#appMain').classList.add('hidden');$('#loginScreen').classList.add('hidden');$('#publicForm').classList.remove('hidden');if(!e){$('#publicTitle').textContent='Formulário não encontrado';$('#publicClosed').textContent='O link não corresponde a um evento cadastrado neste navegador.';$('#publicClosed').classList.remove('hidden');$('#attendanceForm').classList.add('hidden');return}
+$('#publicTitle').textContent=e.title;$('#publicDescription').textContent=e.description||'';$('#publicBanner').classList.toggle('hidden',!e.banner);if(e.banner)$('#publicBanner').src=e.banner;$('#publicClosed').classList.add('hidden');$('#attendanceForm').classList.remove('hidden');
+let now=Date.now(),start=e.start?new Date(e.start).getTime():0,end=e.end?new Date(e.end).getTime():Infinity,closed=!e.active||now<start||now>end;
+if(closed){$('#publicClosed').textContent=!e.active?'Este evento está desativado.':now<start?'O formulário ainda não está aberto.':'O período de confirmação foi encerrado.';$('#publicClosed').classList.remove('hidden');$('#submitAttendance').disabled=true}else $('#submitAttendance').disabled=false;
+$('#codeField').classList.toggle('hidden',!e.code);$('#publicGps').classList.toggle('hidden',!e.gps);
+let fields='';(e.fields||[]).forEach(k=>{let label=fieldLabels[k];if(!label)return;let required=true;if(k==='modality')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.modalities.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
+else if(k==='course')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.courses.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
+else if(k==='year')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.years.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
+else if(k==='class')fields+=`<div class="field"><label>${label} *</label><select name="${k}" required><option value="">Selecione</option>${db.settings.classes.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
+else fields+=`<div class="field"><label>${label} *</label><input name="${k}" ${k==='matricula'?'inputmode="numeric"':''} required></div>`});
+(e.questions||[]).forEach((q,i)=>{let req=q.required?'required':'';fields+=`<div class="field"><label>${esc(q.prompt)} ${q.required?'*':''}</label>${q.type==='long'?`<textarea name="custom_${i}" rows="3" ${req}></textarea>`:q.type==='choice'?`<select name="custom_${i}" ${req}><option value="">Selecione</option>${q.options.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:`<input name="custom_${i}" ${req}>`}</div>`});
+$('#publicFields').innerHTML=fields;$('#attendanceForm').onsubmit=ev=>submitAttendance(ev,e)}
+function submitAttendance(ev,e){ev.preventDefault();if(e.code&&$('#publicCode').value!==e.code){toast('Código de acesso incorreto.');return}
+let form=$('#attendanceForm'),data=new FormData(form),answers={},name=data.get('name')||'',matricula=data.get('matricula')||'';for(let [k,v] of data.entries())if(k!=='name'&&k!=='matricula')answers[k]=v;
+let existing=db.responses[e.id]||[];if(matricula&&existing.some(r=>String(r.matricula).trim()===String(matricula).trim())){toast('Já existe uma presença registrada para esta matrícula neste evento.');return}
+let save=(coords=null)=>{let record={name,matricula,answers,coords,createdAt:new Date().toISOString()};existing.push(record);db.responses[e.id]=existing;persist();$('#attendanceForm').classList.add('hidden');$('#publicSuccess').textContent='Presença registrada com sucesso neste navegador. Guarde esta confirmação.';$('#publicSuccess').classList.remove('hidden')};
+if(e.gps){if(!navigator.geolocation){toast('Seu navegador não oferece geolocalização.');return}navigator.geolocation.getCurrentPosition(pos=>{let lat=pos.coords.latitude,lng=pos.coords.longitude,allowed=e.locations.some(l=>l.radius==='Livre'||distanceM(lat,lng,Number(l.lat),Number(l.lng))<=Number(l.radius));if(!allowed){toast('Você está fora das localidades autorizadas para este evento.');return}save({lat,lng,accuracy:pos.coords.accuracy})},()=>toast('Não foi possível obter sua localização. Autorize o acesso ao GPS.'),{enableHighAccuracy:true,timeout:15000,maximumAge:0})}else save()}
+let hash=location.hash.match(/#presenca=([^&]+)/);if(hash){openPublicForm(decodeURIComponent(hash[1]))}
+renderSettings();

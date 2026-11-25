@@ -1,0 +1,23 @@
+PRESENÇA IFBA — PACOTE DE TESTE
+================================
+
+ARQUIVOS
+- index.html: estrutura das telas do sistema.
+- style.css: estilos e identidade visual.
+- app.js: interações e funcionalidades da demonstração.
+
+COMO TESTAR NO COMPUTADOR
+1. Extraia todos os arquivos do ZIP para a mesma pasta.
+2. Abra index.html no Chrome, Firefox ou Edge.
+3. Teste as telas e funções disponíveis na demonstração.
+
+IMPORTANTE — LIMITAÇÕES DESTA VERSÃO
+Esta versão é demonstrativa e armazena dados no navegador (localStorage). O login não autentica contas institucionais pelo Supabase; eventos e respostas não são compartilhados entre dispositivos. A validação de GPS ocorre no navegador e não é uma validação segura no servidor.
+
+A biblioteca de QR Code pode depender de acesso à internet.
+
+PUBLICAÇÃO
+Você pode enviar os quatro arquivos para a raiz do repositório GitHub Pages, substituindo os arquivos correspondentes somente depois de guardar uma cópia de segurança. Isso publicará a demonstração, não uma versão de produção integrada ao Supabase.
+
+ANTES DE USAR COM DADOS REAIS
+É necessário integrar e testar Supabase Auth, banco de dados, políticas RLS, armazenamento de banners e validações no servidor. Não coloque chaves secretas/service_role no navegador. Este pacote não altera nem publica nada no GitHub ou no Supabase.
