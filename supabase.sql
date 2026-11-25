@@ -1,46 +1,90 @@
--- Presença IFBA: políticas complementares para leitura administrativa e envio público.
--- Script aditivo/idempotente: não apaga tabelas nem registros.
+-- Presenca IFBA: corrigir permissao de leitura administrativa e envio publico.
+-- Script aditivo e seguro: nao apaga eventos nem respostas existentes.
+-- Execute este arquivo inteiro no Supabase > SQL Editor > Run.
 
--- Participantes podem consultar somente eventos ativos pelo link público.
-DROP POLICY IF EXISTS "Public can view active events" ON public.events;
-CREATE POLICY "Public can view active events"
-ON public.events FOR SELECT TO anon, authenticated
-USING (is_active = true);
-GRANT SELECT ON public.events TO anon, authenticated;
+begin;
 
--- Administradores autenticados podem consultar as respostas.
-DROP POLICY IF EXISTS "Admins read form responses" ON public.form_responses;
-DROP POLICY IF EXISTS "Admin can read form responses" ON public.form_responses;
-CREATE POLICY "Admin can read form responses"
-ON public.form_responses FOR SELECT TO authenticated
-USING (public.is_admin());
+-- A API do Supabase precisa de USAGE no schema e privilegios na tabela.
+alter table public.form_responses enable row level security;
+grant usage on schema public to anon, authenticated;
+grant select on table public.events to anon, authenticated;
+grant select, insert on table public.form_responses to anon, authenticated;
 
--- O formulário público pode inserir respostas somente em eventos ativos.
-DROP POLICY IF EXISTS "Public submit active form responses" ON public.form_responses;
-DROP POLICY IF EXISTS "Public can submit active form responses" ON public.form_responses;
-CREATE POLICY "Public can submit active form responses"
-ON public.form_responses FOR INSERT TO anon, authenticated
-WITH CHECK (
-  EXISTS (
-    SELECT 1 FROM public.events e
-    WHERE e.id = form_responses.event_id
-      AND e.is_active = true
+-- Administradores podem consultar respostas; a funcao is_admin() identifica o usuario autorizado.
+drop policy if exists "Admins read form responses" on public.form_responses;
+drop policy if exists "Admin can read form responses" on public.form_responses;
+create policy "Admin can read form responses"
+on public.form_responses
+for select
+to authenticated
+using (public.is_admin());
+
+-- Participantes podem enviar respostas apenas para eventos ativos.
+drop policy if exists "Public submit active form responses" on public.form_responses;
+drop policy if exists "Public can submit active form responses" on public.form_responses;
+create policy "Public can submit active form responses"
+on public.form_responses
+for insert
+to anon, authenticated
+with check (
+  exists (
+    select 1
+    from public.events e
+    where e.id = form_responses.event_id
+      and e.is_active = true
   )
 );
 
-GRANT SELECT, INSERT ON public.form_responses TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+-- A funcao de autorizacao deve poder ser chamada por usuarios autenticados.
+grant execute on function public.is_admin() to authenticated;
 
--- Habilita Realtime sem adicionar a tabela duas vezes.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime')
-     AND NOT EXISTS (
-       SELECT 1 FROM pg_publication_tables
-       WHERE pubname = 'supabase_realtime'
-         AND schemaname = 'public'
-         AND tablename = 'form_responses'
-     ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.form_responses;
-  END IF;
-END $$;
+-- O formulario publico consulta apenas eventos ativos.
+drop policy if exists "Public can view active events" on public.events;
+create policy "Public can view active events"
+on public.events
+for select
+to anon, authenticated
+using (is_active = true);
+
+commit;
+
+-- Habilita Realtime para novas respostas, sem adicionar a tabela duas vezes.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (
+       select 1 from pg_publication_tables
+       where pubname = 'supabase_realtime'
+         and schemaname = 'public'
+         and tablename = 'form_responses'
+     ) then
+    alter publication supabase_realtime add table public.form_responses;
+  end if;
+end $$;
+
+
+-- Exclusao segura de formulario e respostas vinculadas.
+-- A funcao valida o administrador e apaga as respostas antes do evento,
+-- evitando falha por chave estrangeira. Nao afeta outros eventos.
+create or replace function public.delete_event_with_responses(p_event_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not coalesce(public.is_admin(), false) then
+    raise exception 'Apenas administradores podem excluir formularios.' using errcode = '42501';
+  end if;
+
+  delete from public.form_responses where event_id = p_event_id;
+  delete from public.events where id = p_event_id;
+
+  if not found then
+    -- A ausência do evento não é erro: a operação é idempotente.
+    return;
+  end if;
+end;
+$$;
+
+grant execute on function public.delete_event_with_responses(uuid) to authenticated;
