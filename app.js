@@ -1,6 +1,32 @@
 
-const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const STORE='presencaIFBA_full_demo_v1';
+(async function bootstrapPresencaIFBA(){
+  async function ensureSupabaseSDK(){
+    if(window.supabase && typeof window.supabase.createClient==='function') return true;
+    const urls=[
+      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+      'https://unpkg.com/@supabase/supabase-js@2'
+    ];
+    for(const src of urls){
+      try{
+        await new Promise((resolve,reject)=>{
+          const script=document.createElement('script');
+          script.src=src; script.async=true;
+          script.onload=resolve; script.onerror=()=>reject(new Error('Não foi possível carregar a biblioteca de autenticação.'));
+          document.head.appendChild(script);
+        });
+        if(window.supabase && typeof window.supabase.createClient==='function') return true;
+      }catch(err){ console.warn('Falha ao carregar SDK:',src,err); }
+    }
+    return false;
+  }
+  const sdkReady=await ensureSupabaseSDK();
+  if(!sdkReady){
+    const form=document.getElementById('loginForm');
+    if(form){let msg=document.getElementById('loginError');if(!msg){msg=document.createElement('div');msg.id='loginError';msg.setAttribute('role','alert');msg.style.cssText='color:#b42318;background:#fef3f2;padding:12px;border-radius:8px;margin:12px 0';form.appendChild(msg)}msg.textContent='Não foi possível carregar o serviço de autenticação. Verifique sua conexão e recarregue a página.';}
+    return;
+  }
+  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+  const STORE='presencaIFBA_full_demo_v1';
 // Integração real: eventos e respostas ficam no Supabase, não no armazenamento local.
 const SUPABASE_URL='https://kvcqgceqgmagqlcazrxa.supabase.co';
 const SUPABASE_ANON_KEY='sb_publishable_pQ65ZzJSgmqHElLumvPFTQ_BblhviDt';
@@ -12,7 +38,16 @@ function toIso(v){return v?new Date(v).toISOString():null}
 function configOf(e){return {fields:e.fields,keepDefaults:e.keepDefaults,questions:e.questions,gps:e.gps,locations:e.locations,banner:e.banner||'',settings:db.settings}}
 function dbPayload(e){return {title:e.title,description:e.description||null,start_at:toIso(e.start),end_at:toIso(e.end),access_code:e.code||null,is_active:e.active,form_config:configOf(e),image_url:null}}
 async function fetchEvents(){const {data,error}=await supabase.from('events').select('*').order('created_at',{ascending:false});if(error)throw error;db.events=(data||[]).map(fromDb);return db.events}
-function showLoadError(prefix,error){console.error(prefix,error);toast(prefix+': '+(error?.message||'verifique a conexão e as permissões do Supabase.'))}
+function showLoadError(prefix,error){
+ console.error(prefix,error);
+ const message=prefix+': '+(error?.message||error?.details||'verifique a conexão e as permissões do Supabase.');
+ if(prefix.toLowerCase().includes('login')){
+  let box=$('#loginError');
+  if(!box){box=document.createElement('div');box.id='loginError';box.setAttribute('role','alert');box.style.cssText='color:#b42318;background:#fef3f2;padding:12px;border-radius:8px;margin:12px 0';$('#loginForm').appendChild(box)}
+  box.textContent=message;
+ }
+ toast(message);
+}
 
 const DEFAULTS={
  modalities:['Integrado','Subsequente','Superior','Pós-graduação'],
@@ -53,10 +88,32 @@ function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function toast(m){let t=$('#toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>t.classList.add('hidden'),3200)}
 function showView(id){['dashboardView','builderView','settingsView','responsesView'].forEach(x=>$('#'+x).classList.toggle('hidden',x!==id))}
 async function startApp(){ $('#loginScreen').classList.add('hidden');$('#appHeader').classList.remove('hidden');$('#appMain').classList.remove('hidden');showView('dashboardView');try{await fetchEvents();drawEvents()}catch(err){showLoadError('Não foi possível carregar os eventos',err)}}
-$('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const email=$('#adminEmail').value.trim(),password=$('#adminPassword').value;if(!email||!password){toast('Informe e-mail e senha para continuar.');return}const btn=$('#loginForm').querySelector('[type="submit"]');if(btn)btn.disabled=true;try{const {data,error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;currentUser=data.user;const {data:admin,error:adminError}=await supabase.rpc('is_admin');if(adminError)throw adminError;if(!admin){await supabase.auth.signOut();throw new Error('Esta conta não possui autorização de administrador no Presença IFBA.')}await startApp();toast('Login realizado com sucesso.')}catch(err){showLoadError('Falha no login',err)}finally{if(btn)btn.disabled=false}});
+$('#loginForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const email=$('#adminEmail').value.trim(),password=$('#adminPassword').value;
+ if(!email||!password){showLoadError('Falha no login',new Error('Informe e-mail e senha para continuar.'));return}
+ const btn=$('#loginForm').querySelector('[type="submit"]');
+ const originalText=btn?.textContent;
+ if(btn){btn.disabled=true;btn.textContent='Verificando acesso…'}
+ const oldError=$('#loginError');if(oldError)oldError.remove();
+ try{
+  const {data,error}=await supabase.auth.signInWithPassword({email,password});
+  if(error)throw error;
+  if(!data?.user)throw new Error('O Supabase não retornou uma sessão de usuário.');
+  currentUser=data.user;
+  const {data:admin,error:adminError}=await supabase.rpc('is_admin');
+  if(adminError)throw new Error('O login foi aceito, mas não foi possível confirmar a autorização administrativa: '+adminError.message);
+  if(admin!==true){await supabase.auth.signOut();currentUser=null;throw new Error('O e-mail e a senha foram aceitos, mas esta conta não está autorizada na tabela admin_users.');}
+  await startApp();
+  toast('Login realizado com sucesso.');
+ }catch(err){
+  showLoadError('Falha no login',err);
+ }finally{
+  if(btn){btn.disabled=false;btn.textContent=originalText||'Entrar'}
+ }
+});
 $('#togglePassword').onclick=()=>{let p=$('#adminPassword');p.type=p.type==='password'?'text':'password';$('#togglePassword').textContent=p.type==='password'?'Mostrar senha':'Ocultar senha'};
 $('#logoutBtn').onclick=async()=>{await supabase.auth.signOut();currentUser=null;$('#appMain').classList.add('hidden');$('#appHeader').classList.add('hidden');$('#loginScreen').classList.remove('hidden');$('#adminPassword').value=''};
-$('#newEvent,#newEvent2').forEach?.(()=>{}); // no-op compatibility
 function openBuilder(id=null){editingId=id;locationDrafts=[];resetBuilder();if(id){let e=db.events.find(x=>x.id===id);if(!e)return;$('#builderTitle').textContent='Editar evento';$('#eventTitle').value=e.title;$('#eventDescription').value=e.description||'';$('#eventStart').value=e.start||'';$('#eventEnd').value=e.end||'';$('#eventCode').value=e.code||'';$('#eventActive').checked=e.active!==false;$('#keepDefaults').checked=e.keepDefaults!==false;$('#gpsOn').checked=!!e.gps;uploadedBanner=e.banner||'';if(uploadedBanner)$('#bannerPreview').innerHTML=`<img src="${uploadedBanner}" alt="Banner">`;$('#bannerName').textContent=uploadedBanner?'Banner armazenado':'Nenhum arquivo selecionado';selectedFields=e.fields||Object.keys(fieldLabels);locations=JSON.parse(JSON.stringify(e.locations||db.settings.locations));(e.questions||[]).forEach(q=>addQuestion(q));}else{locations=JSON.parse(JSON.stringify(db.settings.locations));selectedFields=Object.keys(fieldLabels)}renderLocations();renderFieldConfig();$('#gpsSettings').classList.toggle('hidden',!$('#gpsOn').checked);$('#generatedResult').classList.add('hidden');showView('builderView');switchBuilderTab('config');updateSummary()}
 function resetBuilder(){['eventTitle','eventDescription','eventStart','eventEnd','eventCode'].forEach(id=>$('#'+id).value='');$('#eventActive').checked=true;$('#keepDefaults').checked=true;$('#gpsOn').checked=false;$('#questions').innerHTML='';$('#bannerFile').value='';$('#bannerName').textContent='Nenhum arquivo selecionado';$('#bannerPreview').innerHTML='';uploadedBanner='';$('#generatedResult').classList.add('hidden')}
 const fieldLabels={name:'Nome completo',matricula:'Matrícula',modality:'Modalidade',course:'Curso',year:'Ano/semestre',class:'Turma'};
@@ -91,7 +148,6 @@ window.deleteEvent=async id=>{if(confirm('Excluir este evento do banco de dados?
 window.copyEventLink=async id=>{let url=new URL('presenca.html', location.href).href+'?id='+encodeURIComponent(id);try{await navigator.clipboard.writeText(url);toast('Link copiado.')}catch(e){prompt('Copie o link do formulário:',url)}};
 $('#eventSearch').oninput=drawEvents;
 $('#newEvent').onclick=()=>openBuilder();$('#newEvent2').onclick=()=>openBuilder();$('#goEvents').onclick=()=>$('#eventListCard').scrollIntoView({behavior:'smooth'});$('#goSettings').onclick=()=>{showView('settingsView');renderSettings()};
-$('#backDashboard,#settingsBack,#responsesBack').forEach?.(()=>{});
 ['backDashboard','settingsBack','responsesBack'].forEach(id=>$('#'+id).onclick=()=>{showView('dashboardView');drawEvents()});
 $$('.tab').forEach(b=>b.onclick=()=>switchBuilderTab(b.dataset.tab));
 function switchBuilderTab(tab){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$('#configTab').classList.toggle('hidden',tab!=='config');$('#studentPreviewTab').classList.toggle('hidden',tab!=='studentPreview');if(tab==='studentPreview')renderBuilderPreview()}
@@ -111,3 +167,4 @@ window.viewResponses=viewResponses;
 $('#exportCsv').onclick=()=>{let rows=responseRowsCache;if(!rows.length){toast('Não há respostas para exportar.');return}let headers=['Data/hora','Nome','Matrícula','Respostas'];let csv=[headers,...rows.map(r=>[new Date(r.createdAt).toLocaleString('pt-BR'),r.name||'',r.matricula||'',JSON.stringify(r.answers||{})])].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'}));a.download='presencas-evento.csv';a.click();URL.revokeObjectURL(a.href)};
 supabase.auth.getSession().then(async({data})=>{if(data.session){currentUser=data.session.user;const {data:admin,error}=await supabase.rpc('is_admin');if(!error&&admin)startApp();else await supabase.auth.signOut()}})
 renderSettings();
+})();

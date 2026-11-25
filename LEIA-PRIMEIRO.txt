@@ -34,3 +34,10 @@ ATUALIZAÇÃO — LINK PÚBLICO E RESPOSTAS EM TEMPO REAL
 - Publique todos os arquivos juntos na raiz do GitHub Pages: index.html, presenca.html, app.js, public.js, style.css e supabase.sql.
 
 Importante: o ZIP foi verificado localmente, mas não foi possível testar login, gravação ou notificações no seu projeto Supabase ao vivo. Faça um evento de teste e envie uma resposta por outro celular antes de usar oficialmente.
+
+
+CORREÇÃO DE LOGIN (25/11/2026)
+- Esta versão aguarda/carrega a biblioteca do Supabase antes de iniciar o sistema.
+- Corrige erros de JavaScript que interrompiam a inicialização.
+- Erros de autenticação agora ficam visíveis na própria tela de login.
+- Não execute SQL e não apague dados do Supabase para aplicar esta correção.
