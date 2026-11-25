@@ -1,6 +1,11 @@
 PRESENÇA IFBA — PACOTE DE TESTE
 ================================
 
+ALTERAÇÕES DESTA VERSÃO
+- É possível adicionar várias localidades GPS no cadastro do evento.
+- Cada localidade tem botão “Salvar localização”, além de edição e remoção.
+- O formulário público exibe somente o logotipo pequeno do IFBA e o banner do evento, sem o texto “PRESENÇA IFBA — Campus Vitória da Conquista”.
+
 ARQUIVOS
 - index.html: estrutura das telas do sistema.
 - style.css: estilos e identidade visual.
