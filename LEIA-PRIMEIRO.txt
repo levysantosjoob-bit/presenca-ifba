@@ -5,3 +5,6 @@ Substitua os arquivos deste pacote na raiz do GitHub Pages. Não precisa executa
 Para cadastrar a posição exata: edite o evento no local físico, clique em “Usar minha localização atual”, depois em “Salvar localização” e salve o evento.
 
 Teste o link público em um celular com localização precisa ativada. A leitura coleta a melhor posição por até 18 segundos e considera a margem de erro do GPS na borda do raio.
+
+
+CERTIFICADOS: leia README-CERTIFICADOS.md e execute certificados-supabase.sql no Supabase antes de usar o módulo.

@@ -1,0 +1,5 @@
+(()=>{
+const sb=window.supabase.createClient('https://kvcqgceqgmagqlcazrxa.supabase.co','sb_publishable_pQ65ZzJSgmqHElLumvPFTQ_BblhviDt'),$=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let q=new URLSearchParams(location.search).get('codigo');if(q)$('#authCode').value=q;
+$('#validateForm').addEventListener('submit',async e=>{e.preventDefault();let box=$('#validationResult');box.classList.remove('hidden');box.textContent='Consultando…';let {data,error}=await sb.rpc('validate_certificate_code',{p_auth_code:$('#authCode').value.trim()});if(error){box.textContent='Não foi possível consultar o código agora.';return}let r=Array.isArray(data)?data[0]:data;if(!r?.auth_code){box.textContent='Código não localizado. Não foi possível autenticar este certificado.';return}box.className='ok';box.innerHTML=`<b>Certificado autêntico</b><br>Participante: ${esc(r.participant_name)}<br>Evento: ${esc(r.event_name)}<br>Emitido em: ${new Date(r.issued_at).toLocaleDateString('pt-BR')}<br>Código: ${esc(r.auth_code)}`});if(q)$('#validateForm').requestSubmit();
+})();

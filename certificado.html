@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Solicitar certificado | Presença IFBA</title><link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="certificado.js?v=20261126" defer></script></head>
+<body><main class="student-shell"><section class="student-card"><div class="student-head"><img src="./ifba-logo.png" alt="IFBA" width="250"><span class="student-brand-caption">IFBA · Certificados</span></div>
+<h2>Solicitar certificado</h2><p class="muted">Selecione o evento e informe seu nome completo exatamente como foi cadastrado no formulário de presença.</p>
+<div id="certMessage" class="note hidden"></div><form id="certRequestForm">
+<div class="field"><label for="certEvent">EVENTO</label><select id="certEvent" required><option value="">Carregando eventos…</option></select></div>
+<div class="field"><label for="participantName">NOME COMPLETO</label><input id="participantName" autocomplete="name" placeholder="Digite seu nome completo" required></div>
+<button class="btn" id="requestCertificate" type="submit" style="width:100%">Verificar participação e emitir certificado</button></form>
+<div id="certResult" class="ok hidden"></div></section></main></body></html>

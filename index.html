@@ -31,6 +31,7 @@
   <div class="grid3">
    <button class="action-card" id="newEvent"><div class="symbol">＋</div><h3>Cadastrar evento</h3><p>Crie um evento, configure identificação, perguntas, banner, período e GPS.</p></button>
    <button class="action-card" id="goEvents"><div class="symbol">▤</div><h3>Eventos já cadastrados</h3><p>Consulte, edite, ative, compartilhe e acompanhe as respostas.</p><p style="margin-top:10px"><strong id="eventCount">0 eventos</strong></p></button>
+   <button class="action-card" id="goCertificates"><div class="symbol">▧</div><h3>Criar certificado</h3><p>Configure certificados, vincule formulários de presença e gere o link público de emissão.</p></button>
    <button class="action-card" id="goSettings"><div class="symbol">⚙</div><h3>Configurações</h3><p>Gerencie cursos, modalidades, turmas e localidades autorizadas.</p></button>
   </div>
   <div class="card" id="eventListCard"><div class="rowhead"><div><h3>Eventos cadastrados</h3><p class="sub">Lista de eventos criados neste navegador.</p></div><button class="btn" id="newEvent2">＋ Cadastrar evento</button></div>
@@ -80,6 +81,26 @@
   </div>
   <div class="card"><h3>Localidades GPS</h3><p class="sub">Pontos predefinidos para reutilização nos eventos.</p><div id="settingsLocations"></div><button class="btn secondary" id="addSettingsLocation">＋ Nova localidade</button></div>
  </section>
+ <section id="certificateView" class="hidden">
+  <div class="intro"><div><h2>Criar certificado</h2><p>Configure um modelo para um evento e vincule um ou mais formulários de presença.</p></div><button class="btn secondary" id="certificateBack">← Voltar ao painel</button></div>
+  <div class="layout">
+   <div class="card">
+    <h3>Dados que aparecerão no certificado</h3><p class="sub">O texto institucional do modelo do IFBA será mantido. Preencha apenas os dados variáveis.</p>
+    <div class="field"><label>Nome do evento *</label><input id="certEventName" placeholder="Nome completo do evento"></div>
+    <div class="grid2"><div class="field"><label>Data do evento *</label><input id="certEventDate" placeholder="Ex.: 20 e 21 de novembro de 2026"></div><div class="field"><label>Data de emissão *</label><input id="certIssueDate" type="date"></div></div>
+    <div class="field"><label>Tema do evento *</label><textarea id="certTheme" rows="2" placeholder="Tema do evento"></textarea></div>
+    <div class="grid2"><div class="field"><label>Número da Portaria SEI da comissão *</label><input id="certPortariaSei" placeholder="Número da portaria"></div><div class="field"><label>Presidente da comissão organizadora *</label><input id="certPresident" placeholder="Nome completo"></div></div>
+    <div class="field"><label>Portaria de designação do(a) presidente *</label><input id="certAppointment" placeholder="Número da portaria"></div>
+    <div class="divider"></div><h3>Formulários que comprovam a presença</h3><p class="sub">Você pode vincular mais de um formulário ao mesmo certificado. O nome completo informado no formulário será procurado em todos eles.</p>
+    <div id="certificateEventChoices" class="empty">Carregando formulários cadastrados…</div>
+    <div class="field"><label>Nome desta configuração (para controle administrativo)</label><input id="certInternalName" placeholder="Ex.: Certificado — Semana de Tecnologia 2026"></div>
+    <div class="switchrow"><div><strong>Disponibilizar emissão ao público</strong><small>Quando ativo, o evento aparecerá no link público.</small></div><input class="switch" id="certActive" type="checkbox" checked></div>
+    <button class="btn" id="saveCertificateConfig" style="width:100%;margin-top:16px">Salvar configuração e gerar link</button>
+    <div id="certificateLinkResult" class="ok hidden" style="margin-top:14px"><strong>Link público para solicitar certificado</strong><p><a id="certificatePublicLink" href="#" target="_blank"></a></p><button class="btn secondary small" id="copyCertificateLink">Copiar link</button></div>
+   </div>
+   <aside><div class="card"><h3>Certificados configurados</h3><p class="sub">Gerencie os eventos disponíveis para emissão.</p><div id="certificateConfigList"><div class="empty">Nenhuma configuração carregada.</div></div></div><div class="card"><h3>Validação de autenticidade</h3><p class="sub">Cada certificado emitido terá um código individual e um endereço público para verificar sua validade.</p><p><a href="validar-certificado.html" target="_blank">Abrir página de teste de autenticidade</a></p></div></aside>
+  </div>
+ </section>
  <section id="responsesView" class="hidden">
   <div class="intro"><div><h2 id="responsesTitle">Respostas do evento</h2><p id="responsesSubtitle">Consulte os registros enviados pelos estudantes.</p></div><button class="btn secondary" id="responsesBack">← Voltar aos eventos</button></div>
   <div class="card"><div class="rowhead"><div><h3>Participantes registrados</h3><p class="sub" id="responseCount">0 respostas</p></div><button class="btn" id="exportCsv">Exportar CSV</button></div><div id="responsesTable"></div></div>
@@ -92,4 +113,5 @@
  </div></section>
 <div id="toast" class="toast hidden"></div>
 <script src="app.js?v=storage-upload-submit-fix-20261125" defer></script>
+<script src="cert-admin.js?v=20261126" defer></script>
 </body></html>
